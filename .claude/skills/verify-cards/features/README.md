@@ -1,0 +1,67 @@
+# Cards verification map
+
+This folder is where the recipes for verifying what Cards users see are kept up to date. Read this
+index before driving the app, then use the matching feature file as the recipe. `cv` is the
+function defined in [../SKILL.md](../SKILL.md).
+
+## Baseline preconditions
+
+- `cv build` ran after the last source change, and `cv doctor` prints `healthy`.
+- The run was started with `cv launch --seed` unless the recipe says plain `cv launch`. Seeded, the
+  stack holds `Alpha card` (body `alpha body`) on top and `Beta card` (body `beta line one`,
+  `beta line two`) under it, the count badge reads 2, Clarity is off, and no card is popped.
+- The stack window is in its home slot, the top-right cell of the screen.
+- Never drive a Cards instance that `cv launch` did not start.
+
+## Driving conventions
+
+- Start every recipe from the baseline state. Recipes that change state say so; when two recipes
+  run in one launch, run the second from whatever the first left, or `cv stop` and relaunch.
+- Address windows as `stack` or `card=<first line>`, never by `w` index.
+- Prefer `cv ax press` (by button name) over `click` at coordinates. Use `click`, `scroll` and
+  `drag` only for the edge bands, swipes and drags, which have no button.
+- Wait 1.5 s after the last change before `cv files`: saves are debounced by one second.
+- Treat every command as literal. Keep quoted names, including `↩ Stack` and `Clarity: Off`, as
+  written.
+
+## Proof and skip reporting
+
+- Capture the action and the resulting state: `cv shot <feature>-before` and `cv shot
+  <feature>-after`, or the `cv ax tree` lines before and after.
+- Anything that should persist needs `cv files <feature>` showing the `.md` text and the sidecar
+  fields that changed.
+- Record the feature ID and the entry point used with `cv note "<feature-id> via <entry>: <what
+  you saw>"`.
+- Report an entry point you could not drive (the menu bar icon, ⌥⌘C, a real trackpad swipe) as
+  not verified, with the reason. Do not count it as verified through another entry point.
+
+## Feature entry contract
+
+Each feature file starts with an H1 title and one paragraph describing what the user sees and can
+do. It then has exactly four H2 sections, in this order:
+
+1. `Sub-features`: short IDs, one line each.
+2. `How to get to it (user POV)`: every user entry point.
+3. `Driving it with cards-verify`: starts with `Preconditions:`, then labeled bullets that pair
+   each user action with an exact command and the observable result.
+4. `Gotchas`: traps that can waste or invalidate a run.
+
+Keep implementation details out of the map. Name only user paths, stable handles, required state,
+commands and observable proof.
+
+## Features
+
+- [Create a card](./create-card.md): New from the ribbon, typing the header and body, typing on
+  the stack's blank page, and the Markdown file each makes.
+- [Browse the stack](./stack-loop.md): next and previous by edge band and swipe, the blank page in
+  the loop, Pop, ↩ Stack and the count badge.
+- [Hide all](./hide-all.md): the ribbon's Hide all / Show all toggle, the ribbon-only stack, and
+  New while hidden.
+- [Clarity](./clarity.md): the global Clarity button, per-card collapse and expand, and what a
+  collapsed card shows.
+- [Delete a card](./delete-card.md): the trash button, its confirmation, and the file leaving the
+  folder.
+
+Not mapped yet: moving cards and the stack by drag (snap, swap, free places, overhang), the
+formatting bar and list typing, Settings… and the API key, summaries with a real key, the menu bar
+icon, and folder changes made outside the app.

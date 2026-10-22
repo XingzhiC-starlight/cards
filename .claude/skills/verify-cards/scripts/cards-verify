@@ -1,0 +1,183 @@
+#!/bin/bash
+# cards-verify: build, launch, drive, capture and stop an isolated Cards instance.
+# Run with no arguments for usage. See ../SKILL.md for the recipe.
+set -euo pipefail
+
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$SKILL_DIR/../../.." && pwd)"
+DERIVED="$REPO/build/VerifyDerivedData"
+APP="$DERIVED/Build/Products/Debug/Cards.app"
+BIN="$APP/Contents/MacOS/Cards"
+AX="$REPO/build/verify-tools/cards-ax"
+RUNS="$REPO/build/verify-runs"
+EVIDENCE_ROOT="$REPO/build/verify-evidence"
+
+usage() {
+  cat <<'EOF'
+cards-verify build                  build Cards into build/VerifyDerivedData and compile cards-ax
+cards-verify launch [--seed]        start an isolated instance on an empty temp folder (--seed: two stacked cards)
+cards-verify doctor                 read-only health check of the current run
+cards-verify ax COMMAND ARGS...     cards-ax against the current run's pid (tree, press, text, click, focus, type, key, scroll, drag, windows)
+cards-verify shot NAME              screenshot every window + accessibility tree into the evidence folder
+cards-verify files NAME             copy the card folder (*.md and .cards.json) into the evidence folder and print it
+cards-verify note TEXT              append a line to the run's evidence log
+cards-verify stop                   quit the instance this run started, delete its temp folder, keep evidence
+cards-verify env                    print RUN_ID, PID, FOLDER, EVIDENCE of the current run
+EOF
+}
+
+die() { echo "cards-verify: $*" >&2; exit 1; }
+
+current() {
+  [[ -f "$RUNS/current.env" ]] || die "no current run; start one with: cards-verify launch"
+  # shellcheck disable=SC1091
+  source "$RUNS/current.env"
+}
+
+ours() {  # true when PID is alive and is the binary this run launched on this run's folder
+  local cmd
+  cmd="$(ps -o command= -p "$PID" 2>/dev/null || true)"
+  [[ "$cmd" == "$BIN -CardsFolder $FOLDER"* ]]
+}
+
+log() { echo "$(date '+%H:%M:%S') $*" | tee -a "$EVIDENCE/log.txt"; }
+
+build() {
+  xcodebuild -project "$REPO/Cards.xcodeproj" -scheme Cards -configuration Debug \
+    -derivedDataPath "$DERIVED" build -quiet
+  local src="$SKILL_DIR/scripts/cards-ax.swift"
+  if [[ ! -x "$AX" || "$src" -nt "$AX" ]]; then
+    mkdir -p "$(dirname "$AX")"
+    swiftc -O "$src" -o "$AX"
+  fi
+  echo "built $APP"
+}
+
+launch() {
+  [[ -x "$BIN" && -x "$AX" ]] || die "not built; run: cards-verify build"
+  if [[ -f "$RUNS/current.env" ]]; then
+    current
+    if ours; then die "run $RUN_ID (pid $PID) is still up; stop it first: cards-verify stop"; fi
+  fi
+  local run_id folder evidence pid=""
+  run_id="$(date '+%Y%m%d-%H%M%S')"
+  # Cards writes here, so keep it out of ~/Desktop and ~/Documents: those trigger a privacy prompt.
+  folder="${TMPDIR:-/tmp/}cards-verify/$run_id/folder"
+  folder="${folder//\/\//\/}"
+  evidence="$EVIDENCE_ROOT/$run_id"
+  mkdir -p "$folder" "$evidence" "$RUNS"
+  if [[ "${1:-}" == "--seed" ]]; then
+    printf '# Alpha card\n\nalpha body\n' > "$folder/seed-a.md"
+    printf '# Beta card\n\nbeta line one\nbeta line two\n' > "$folder/seed-b.md"
+  fi
+  # `open -n` detaches the app from this shell (a child of the shell dies with it) and starts a new
+  # instance even while the owner's Cards runs. Every later step targets the pid, never the name.
+  open -n --stdout "$evidence/app.log" --stderr "$evidence/app.log" "$APP" --args -CardsFolder "$folder"
+  for _ in $(seq 1 50); do
+    pid="$(pgrep -f -- "-CardsFolder $folder\$" || true)"
+    [[ -n "$pid" ]] && break
+    sleep 0.2
+  done
+  [[ -n "$pid" ]] || die "Cards did not start; see $evidence/app.log"
+  printf 'RUN_ID=%q\nPID=%q\nFOLDER=%q\nEVIDENCE=%q\n' "$run_id" "$pid" "$folder" "$evidence" > "$RUNS/current.env"
+  current
+  # Ready = the stack window answers with its New button, not just a live process.
+  for _ in $(seq 1 50); do
+    if "$AX" tree "$PID" 2>/dev/null | grep -q '"New"'; then
+      log "launched run $RUN_ID pid $PID folder $FOLDER${1:+ ($1)}"
+      echo "evidence: $EVIDENCE"
+      return
+    fi
+    sleep 0.2
+  done
+  die "pid $PID is up but the stack window never appeared; run: cards-verify doctor"
+}
+
+doctor() {
+  current
+  local ok=1
+  echo "run       $RUN_ID"
+  if ours; then echo "process   ok: pid $PID is $BIN on $FOLDER"; else echo "process   FAIL: pid $PID is not this run's Cards (gone, or reused)"; ok=0; fi
+  local newest
+  newest="$(find "$REPO/Cards" -name '*.swift' -newer "$BIN" | head -1)"
+  if [[ -z "$newest" ]]; then echo "build     ok: no source newer than the binary"; else echo "build     STALE: $newest is newer than the binary; run: cards-verify build, then relaunch"; ok=0; fi
+  if [[ -d "$FOLDER" ]]; then echo "folder    ok: $(ls -A "$FOLDER" | wc -l | tr -d ' ') entries in $FOLDER"; else echo "folder    FAIL: $FOLDER is missing"; ok=0; fi
+  if [[ $ok == 1 ]] && "$AX" tree "$PID" > /tmp/cards-verify-doctor.$$ 2>&1; then
+    local windows
+    windows="$(grep -c '^w' /tmp/cards-verify-doctor.$$ || true)"
+    if grep -q '"New"' /tmp/cards-verify-doctor.$$; then echo "ui        ok: $windows window(s), stack answers"; else echo "ui        FAIL: no stack window in the accessibility tree"; ok=0; fi
+  else
+    echo "ui        FAIL: $(cat /tmp/cards-verify-doctor.$$ 2>/dev/null)"; ok=0
+  fi
+  rm -f /tmp/cards-verify-doctor.$$
+  local others
+  others="$(pgrep -f 'Cards.app/Contents/MacOS/Cards' | grep -vx "$PID" | tr '\n' ' ' || true)"
+  [[ -n "$others" ]] && echo "others    note: other Cards processes (not ours, never drive them): $others"
+  [[ $ok == 1 ]] && echo "healthy" || { echo "UNHEALTHY"; return 1; }
+}
+
+ax() {
+  current
+  ours || die "pid $PID is not this run's Cards; run: cards-verify doctor"
+  local cmd="$1"; shift
+  "$AX" "$cmd" "$PID" "$@"
+}
+
+shot() {
+  current
+  local name="$1"
+  ours || die "pid $PID is not this run's Cards"
+  "$AX" tree "$PID" > "$EVIDENCE/$name.tree.txt"
+  local n=0
+  while read -r id _; do
+    [[ -n "$id" ]] || continue
+    # A window mid-animation (a flip, a snap) can refuse once; retry before giving up on it.
+    if screencapture -x -o -l "$id" "$EVIDENCE/$name-$id.png" 2>/dev/null \
+      || { sleep 0.5; screencapture -x -o -l "$id" "$EVIDENCE/$name-$id.png"; }; then
+      n=$((n + 1))
+    else
+      log "shot $name: window $id could not be captured"
+    fi
+  done < <("$AX" windows "$PID")
+  log "shot $name: $n window(s), tree in $name.tree.txt"
+}
+
+files() {
+  current
+  local name="$1" out="$EVIDENCE/$1-files"
+  mkdir -p "$out"
+  cp -p "$FOLDER"/*.md "$out"/ 2>/dev/null || true
+  cp -p "$FOLDER/.cards.json" "$out"/ 2>/dev/null || true
+  log "files $name: $(ls -A "$FOLDER" | tr '\n' ' ')"
+  for f in "$FOLDER"/*.md; do [[ -f "$f" ]] && { echo "--- $(basename "$f")"; cat "$f"; }; done
+  [[ -f "$FOLDER/.cards.json" ]] && { echo "--- .cards.json"; cat "$FOLDER/.cards.json"; }
+  return 0
+}
+
+stop() {
+  current
+  if ours; then
+    kill "$PID"
+    for _ in $(seq 1 25); do ours || break; sleep 0.2; done
+    ours && die "pid $PID did not quit"
+    log "stopped pid $PID"
+  else
+    log "pid $PID already gone"
+  fi
+  rm -rf "$(dirname "$FOLDER")"
+  rm -f "$RUNS/current.env"
+  echo "evidence kept in $EVIDENCE"
+}
+
+case "${1:-}" in
+  build) build ;;
+  launch) shift; launch "$@" ;;
+  doctor) doctor ;;
+  ax) shift; ax "$@" ;;
+  shot) shot "${2:?NAME}" ;;
+  files) files "${2:?NAME}" ;;
+  note) current; log "${2:?TEXT}" ;;
+  stop) stop ;;
+  env) current; cat "$RUNS/current.env" ;;
+  *) usage ;;
+esac
