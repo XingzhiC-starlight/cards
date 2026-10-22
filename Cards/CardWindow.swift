@@ -353,7 +353,7 @@ final class CardView: NSView {
 /// so double-click still selects a word in the header.
 func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CGFloat = 4) -> CGPoint? {
     guard mouseDown.clickCount == 1 else { return nil }
-    let start = NSEvent.mouseLocation
+    let start = screenLocation(of: mouseDown)
     let origin = window.frame.origin
     var dragging = false
     while let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp],
@@ -364,7 +364,7 @@ func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CG
             return CGPoint(x: window.frame.midX, y: window.frame.midY)
         }
         _ = window.nextEvent(matching: .leftMouseDragged)      // consume the drag we peeked at
-        let now = NSEvent.mouseLocation
+        let now = screenLocation(of: event)
         let dx = now.x - start.x
         let dy = now.y - start.y
         if !dragging && hypot(dx, dy) < threshold { continue }
@@ -373,6 +373,15 @@ func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CG
         window.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
     }
     return nil
+}
+
+/// Where a mouse event happened, in screen coordinates. Taken from the event itself rather than
+/// the live cursor, and independent of the window, which moves during a drag.
+private func screenLocation(of event: NSEvent) -> CGPoint {
+    guard let location = event.cgEvent?.location, let primary = NSScreen.screens.first else {
+        return NSEvent.mouseLocation
+    }
+    return CGPoint(x: location.x, y: primary.frame.maxY - location.y)   // CG's origin is top-left
 }
 
 /// A collapsed card's body: two lines of lighter summary text, a small spinner, or

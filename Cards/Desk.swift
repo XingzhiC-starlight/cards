@@ -389,8 +389,9 @@ extension Desk {
     /// request waiting or in flight (see `Summarizer.sync`).
     static func summaryFace(of card: Card, hasKey: Bool) -> SummaryFace {
         guard card.note.wantsSummary else { return .body(card.note.shortBody) }
-        guard hasKey else { return .unavailable(reason: "No Anthropic API key. Add one in Settings.") }
-        guard let summary = card.summary, summary.source == card.digest else { return .loading }
+        guard let summary = card.summary, summary.source == card.digest else {
+            return hasKey ? .loading : .unavailable(reason: "No Anthropic API key. Add one in Settings.")
+        }
         switch summary.outcome {
         case .text(let text): return .text(text)
         case .failed(let reason): return .unavailable(reason: reason)
