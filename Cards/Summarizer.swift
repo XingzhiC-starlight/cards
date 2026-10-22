@@ -25,7 +25,7 @@ final class Summarizer {
         self.deliver = deliver
     }
 
-    /// Reconciles jobs with `cards` (the cards on the desktop). A card wants a job when a key
+    /// Reconciles jobs with `cards` (every card, stacked or popped). A card wants a job when a key
     /// exists, its body wants a summary, and its latest attempt (success or failure) is for an
     /// older version of the note. `typing` is the card just edited: its job (re)starts the quiet
     /// period. Any other wanted card without a job starts at once. A job whose card no longer

@@ -1,8 +1,8 @@
 import AppKit
 
 /// The stack: its own card-sized window in the top-left grid cell, the app's control center.
-/// Same window behaviour as a card (borderless, normal layer, all Spaces), but it never moves
-/// and has no editor.
+/// Same window behaviour as a card (borderless, normal layer, all Spaces), but it never moves.
+/// Its selected card is edited in place.
 final class StackWindow: NSWindow {
     private let stackView: StackView
 
@@ -15,10 +15,29 @@ final class StackWindow: NSWindow {
 
     override var canBecomeKey: Bool { true }
 
+    override func becomeKey() {
+        super.becomeKey()
+        stackView.editingStateChanged()
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        stackView.editingStateChanged()
+    }
+
     func apply(_ face: StackFace, frame: CGRect) {
         if self.frame != frame { setFrame(frame, display: true) }
         stackView.apply(face)
     }
+
+    /// Makes this window key with the cursor in the shown card (the blank page after New refused).
+    func focusEditor() {
+        makeKeyAndOrderFront(nil)
+        stackView.focusEditor()
+    }
+
+    /// The shown card's selection while it is being edited, for Pop to carry to the popped card.
+    var editingSelection: NSRange? { stackView.editingSelection }
 
     /// The pointer moved; `location` is in screen coordinates.
     func pointerMoved(to location: NSPoint) {
@@ -27,22 +46,24 @@ final class StackWindow: NSWindow {
 }
 
 /// Looks like one card: a sky-blue ribbon with the toolbar (New, Pop, Clarity), "Desktop full",
-/// the count badge and the app menu button, above the selected stacked card. The window's margin is four invisible
-/// edge bands that select another stacked card: left/top the previous, right/bottom the next.
-/// Pop takes the selected card.
+/// the count badge and the app menu button, above the selected stacked card, which is a full
+/// `CardView`. The window's margin is four invisible edge bands that select another stacked
+/// card: left/top the previous, right/bottom the next. Pop takes the selected card.
+/// The stack draws the card shape and the editing border; the `CardView` inside draws nothing.
 private final class StackView: NSView {
     private let send: (Command) -> Void
     private let toolbar = NSStackView()
     private let popButton: ActionButton
     private let clarityButton: ActionButton
     private let menuButton = ActionButton(symbol: "ellipsis.circle", help: "Show all, hide all, settings and quit")
-    private let preview = CardTextView()
-    private let previewClip = PassThroughView()
-    private let emptyLabel = NSTextField(labelWithString: "Blank page")
+    private let cardView: CardView
     private let badge = NSTextField(labelWithString: "0")
     private let fullLabel = NSTextField(labelWithString: "Desktop full")
     private var hoveredEdge: Edge? {
         didSet { if hoveredEdge != oldValue { needsDisplay = true } }
+    }
+    private var cardEditing = false {
+        didSet { if cardEditing != oldValue { needsDisplay = true } }
     }
 
     static let ribbonHeight: CGFloat = 40
@@ -51,6 +72,7 @@ private final class StackView: NSView {
 
     init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu) {
         self.send = send
+        cardView = CardView(home: .stack, send: send)
         popButton = ActionButton(title: "Pop", help: "Bring the selected card out") { send(.pop) }
         clarityButton = ActionButton(title: "Clarity: Off", help: "Collapse or expand every card") { send(.toggleClarity) }
         super.init(frame: .zero)
@@ -71,15 +93,8 @@ private final class StackView: NSView {
         }
         addSubview(menuButton)
 
-        preview.isEditable = false
-        preview.isSelectable = false
-        previewClip.clipsToBounds = true
-        previewClip.addSubview(preview)
-        addSubview(previewClip)
-
-        emptyLabel.font = EditorStyle.header
-        emptyLabel.textColor = .tertiaryLabelColor
-        addSubview(emptyLabel)
+        cardView.onEditingChange = { [unowned self] editing in self.cardEditing = editing }
+        addSubview(cardView)
 
         badge.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
         badge.textColor = Self.ribbonText
@@ -99,9 +114,7 @@ private final class StackView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func apply(_ face: StackFace) {
-        if let note = face.selected?.note { preview.show(note) }
-        previewClip.isHidden = face.selected == nil
-        emptyLabel.isHidden = face.selected != nil
+        cardView.apply(face.selected)
         badge.stringValue = "\(face.count)"
         fullLabel.isHidden = !face.desktopFull
         popButton.isEnabled = face.selected != nil && !face.desktopFull
@@ -114,7 +127,14 @@ private final class StackView: NSView {
     /// The pointer is at `point` (view coordinates), or outside the window.
     func hover(at point: NSPoint?) {
         hoveredEdge = point.flatMap(edge(at:))
+        cardView.setHovering(point.map { cardView.frame.contains($0) } ?? false)
     }
+
+    func editingStateChanged() { cardView.editingStateChanged() }
+
+    func focusEditor() { cardView.focusEditor() }
+
+    var editingSelection: NSRange? { cardView.editingSelection }
 
     // MARK: Layout
 
@@ -139,16 +159,18 @@ private final class StackView: NSView {
         badge.frame = NSRect(x: menuButton.frame.minX - 8 - badgeWidth, y: ribbonMid - 9.5, width: badgeWidth, height: 17)
         let fullWidth = fullLabel.fittingSize.width
         fullLabel.frame = NSRect(x: badge.frame.minX - 8 - fullWidth, y: ribbonMid - 9, width: fullWidth, height: 15)
-        let cardTop = ribbonRect.minY - 8
-        previewClip.frame = NSRect(x: inner.minX - 4, y: inner.minY, width: inner.width + 4, height: cardTop - inner.minY)
-        preview.frame = NSRect(x: 0, y: 0, width: previewClip.bounds.width, height: previewClip.bounds.height)
-        emptyLabel.frame = NSRect(x: inner.minX, y: cardTop - 24, width: inner.width, height: 22)
+        // The card's own margin reaches into the edge bands; its text stays inside them.
+        let left = max(inner.minX - CardView.margin.width, bounds.minX)
+        let right = min(inner.maxX + CardView.margin.width, bounds.maxX)
+        let bottom = max(inner.minY - CardView.margin.height, bounds.minY)
+        cardView.frame = NSRect(x: left, y: bottom, width: right - left, height: ribbonRect.minY - bottom)
     }
 
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        let shape = CardShape.path(in: bounds, lineWidth: 1)
+        let lineWidth: CGFloat = cardEditing ? 2 : 1
+        let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
         CardShape.fill.setFill()
         shape.fill()
         NSGraphicsContext.saveGraphicsState()
@@ -169,7 +191,8 @@ private final class StackView: NSView {
             let size = chevron.size()
             chevron.draw(at: NSPoint(x: band.midX - size.width / 2, y: band.midY - size.height / 2))
         }
-        CardShape.border.setStroke()
+        (cardEditing ? NSColor.controlAccentColor.withAlphaComponent(0.85) : CardShape.border).setStroke()
+        shape.lineWidth = lineWidth
         shape.stroke()
         window?.invalidateShadow()
     }
@@ -188,9 +211,4 @@ private final class StackView: NSView {
         guard !content.contains(point) else { return nil }
         return EdgeBands.edge(at: point, in: bounds)
     }
-}
-
-/// Holds the read-only card; clicks go through it to the stack.
-private final class PassThroughView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

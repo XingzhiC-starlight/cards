@@ -32,7 +32,7 @@ final class DeskController {
         self.appMenu = appMenu
         desk = library.load()
         grid = Self.currentGrid() ?? Grid(area: CGRect(x: 0, y: 0, width: 1512, height: 949))
-        summarizer.sync(desk.poppedCards, typing: nil)
+        summarizer.sync(desk.allCards, typing: nil)
         render()
         trackPointer()
     }
@@ -40,17 +40,31 @@ final class DeskController {
     // MARK: The one way state changes
 
     func send(_ command: Command) {
+        // Popping the card being edited on the stack moves the cursor with it.
+        let carriedSelection: NSRange? = if case .pop = command { stackWindow.editingSelection } else { nil }
         let arrived = desk.apply(command)
+        let desktopFull = arrived == nil && desk.firstFreeSlot == nil
+        let typing: CardID? = if case .writeBlank = command { desk.selectedCard?.id } else { command.typedCard }
+        scheduleSave()
+        summarizer.sync(desk.allCards, typing: typing)
+        render()
         switch command {
-        case .new, .pop:
-            if arrived == nil, desk.firstFreeSlot == nil { NSSound.beep() }   // "Desktop full"
+        case .new:
+            if let arrived {
+                cardWindows[arrived]?.focusEditor()
+            } else if desktopFull {
+                NSSound.beep()   // "Desktop full"
+                stackWindow.focusEditor()
+            }
+        case .pop:
+            if let arrived, let carriedSelection {
+                cardWindows[arrived]?.focusEditor(range: carriedSelection)
+            } else if desktopFull {
+                NSSound.beep()
+            }
         default:
             break
         }
-        scheduleSave()
-        summarizer.sync(desk.poppedCards, typing: command.typedCard)
-        render()
-        if case .new = command, let arrived { cardWindows[arrived]?.focusEditor() }
     }
 
     // MARK: Menu bar, hotkey, app events
@@ -89,7 +103,7 @@ final class DeskController {
 
     /// Settings saved or removed the key.
     func apiKeyChanged() {
-        summarizer.sync(desk.poppedCards, typing: nil)
+        summarizer.sync(desk.allCards, typing: nil)
         render()
     }
 

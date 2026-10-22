@@ -9,7 +9,7 @@ final class CardWindow: NSWindow {
 
     init(id: CardID, send: @escaping (Command) -> Void, slotNear: @escaping (CGPoint) -> Slot) {
         cardID = id
-        cardView = CardView(id: id, send: send, slotNear: slotNear)
+        cardView = CardView(home: .desktop(slotNear: slotNear), send: send)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         configureAsCard(self)
         contentView = cardView
@@ -40,9 +40,10 @@ final class CardWindow: NSWindow {
         cardView.apply(face)
     }
 
-    func focusEditor() {
+    /// Makes this window key with the cursor at `range`, or on the header line when nil.
+    func focusEditor(range: NSRange? = nil) {
         makeKeyAndOrderFront(nil)
-        cardView.focusEditor()
+        cardView.focusEditor(range: range)
     }
 
     /// The pointer moved; `location` is in screen coordinates. The hover buttons show while it is
@@ -78,16 +79,30 @@ enum CardShape {
     }
 }
 
-/// Root view of a card. It owns the one decision about what a press means, in this order:
+/// Root view of a card, on the desktop or as the stack's selected card. It owns the one decision
+/// about what a press means, in this order:
 /// 1. a hover button;
-/// 2. the header or the card's margin: a press that moves drags the window, a press on the header
-///    that doesn't is a normal text click (`trackWindowDrag`, called from `CardTextView.mouseDown`
-///    and from here);
+/// 2. the header or the card's margin: on the desktop a press that moves drags the window, and a
+///    press on the header that doesn't is a normal text click (`trackWindowDrag`, called from
+///    `CardTextView.mouseDown` and from here); on the stack every such press is a text click or
+///    belongs to the stack's edge bands;
 /// 3. the body: text editing, or "expand this card" when collapsed.
+///
+/// On the stack the view shows one card at a time: `apply` re-points it at the selected card, or
+/// at nil for the blank page, whose first typed character becomes a card (`Command.writeBlank`).
 final class CardView: NSView {
-    let id: CardID
+    /// Where the card lives. A desktop card draws itself and can be dragged to another slot. A
+    /// stacked card is drawn by the `StackView` around it, which also draws the editing border,
+    /// and cannot be dragged or returned to the stack.
+    enum Home {
+        case desktop(slotNear: (CGPoint) -> Slot)
+        case stack
+    }
+
+    /// Stack home only: the card's editing state changed, so the stack redraws its border.
+    var onEditingChange: (Bool) -> Void = { _ in }
+    private let home: Home
     private let send: (Command) -> Void
-    private let slotNear: (CGPoint) -> Slot
     private let editor = CardTextView()
     private let scrollView = NSScrollView()
     private let collapsedHeader = NSTextField(labelWithString: "")
@@ -96,7 +111,10 @@ final class CardView: NSView {
     private let hoverButtons = NSStackView()
     private let clarityButton = ActionButton(symbol: "rectangle.compress.vertical", help: "Collapse this card")
     private let refreshButton = ActionButton(symbol: "arrow.clockwise", help: "Refresh summary")
+    /// Nil is the stack's blank page.
     private var face: CardFace?
+    /// Whether the last `apply` showed the collapsed look; nil before the first one.
+    private var showsCollapsed: Bool?
     private var hovering = false
     /// Derived from AppKit (key window + editor is first responder), never set from outside.
     private var isEditing = false {
@@ -105,6 +123,7 @@ final class CardView: NSView {
             formatBar.isHidden = !isEditing
             needsLayout = true
             needsDisplay = true
+            onEditingChange(isEditing)
         }
     }
 
@@ -112,14 +131,19 @@ final class CardView: NSView {
     /// The card's margin around its content; pressing in it drags the card.
     static let margin = NSSize(width: 16, height: 12)
 
-    init(id: CardID, send: @escaping (Command) -> Void, slotNear: @escaping (CGPoint) -> Slot) {
-        self.id = id
+    init(home: Home, send: @escaping (Command) -> Void) {
+        self.home = home
         self.send = send
-        self.slotNear = slotNear
         formatBar = FormatBar(editor: editor)
         super.init(frame: .zero)
 
-        editor.onChange = { [unowned self] note in self.send(.edit(self.id, note)) }
+        editor.onChange = { [unowned self] note in
+            if let id = self.face?.id {
+                self.send(.edit(id, note))
+            } else {
+                self.send(.writeBlank(note, at: Date()))
+            }
+        }
         editor.onHeaderPress = { [unowned self] event in self.dragIfMoved(event) }
         editor.onFocusChange = { [unowned self] in self.editingStateChanged() }
 
@@ -143,11 +167,13 @@ final class CardView: NSView {
 
         clarityButton.handler = { [unowned self] in
             guard let face = self.face else { return }
-            self.send(.setCollapsed(self.id, !face.collapsed))
+            self.send(.setCollapsed(face.id, !face.collapsed))
         }
-        refreshButton.handler = { [unowned self] in self.send(.refreshSummary(self.id)) }
+        refreshButton.handler = { [unowned self] in
+            if let id = self.face?.id { self.send(.refreshSummary(id)) }
+        }
         let stackButton = ActionButton(title: "↩ Stack", help: "Return this card to the top of the stack") { [unowned self] in
-            self.send(.returnToStack(self.id))
+            if let id = self.face?.id { self.send(.returnToStack(id)) }
         }
         let trashButton = ActionButton(symbol: "trash", help: "Delete this card") { [unowned self] in
             self.confirmDelete()
@@ -155,6 +181,7 @@ final class CardView: NSView {
         for button in [refreshButton, clarityButton, stackButton, trashButton] {
             hoverButtons.addArrangedSubview(button)
         }
+        if case .stack = home { stackButton.isHidden = true }
         hoverButtons.spacing = 6
         hoverButtons.alphaValue = 0
         addSubview(hoverButtons)
@@ -162,35 +189,58 @@ final class CardView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func apply(_ face: CardFace) {
+    func apply(_ face: CardFace?) {
         let previous = self.face
         self.face = face
-        editor.show(face.note)
-        collapsedHeader.stringValue = face.note.title
-        summaryView.show(face.summary)
-        if previous?.collapsed != face.collapsed {
-            scrollView.isHidden = face.collapsed
-            collapsedHeader.isHidden = !face.collapsed
-            summaryView.isHidden = !face.collapsed
-            if face.collapsed, window?.firstResponder === editor { window?.makeFirstResponder(nil) }
-            let help = face.collapsed ? "Expand this card" : "Collapse this card"
-            clarityButton.image = NSImage(systemSymbolName: face.collapsed ? "rectangle.expand.vertical"
-                                                                         : "rectangle.compress.vertical",
+        let note = face?.note ?? .blank
+        // Another card in the same view: leave the old card's focus and scroll position behind.
+        // The blank page turning into the card typed on it has the same note, so it is not one.
+        let repointed = previous?.id != face?.id && editor.note != note
+        if repointed { dropFocus() }
+        editor.show(note)
+        if repointed {
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        collapsedHeader.stringValue = note.title
+        summaryView.show(face?.summary ?? .body(""))
+        hoverButtons.isHidden = face == nil
+        let collapsed = face?.collapsed ?? false
+        if showsCollapsed != collapsed {
+            showsCollapsed = collapsed
+            scrollView.isHidden = collapsed
+            collapsedHeader.isHidden = !collapsed
+            summaryView.isHidden = !collapsed
+            if collapsed { dropFocus() }
+            let help = collapsed ? "Expand this card" : "Collapse this card"
+            clarityButton.image = NSImage(systemSymbolName: collapsed ? "rectangle.expand.vertical"
+                                                                      : "rectangle.compress.vertical",
                                           accessibilityDescription: help)
             clarityButton.toolTip = help
-            needsLayout = true
         }
-        let canRefresh: Bool = switch face.summary {
-        case .body: false
-        default: face.collapsed
+        let canRefresh: Bool = switch face?.summary {
+        case .body, nil: false
+        default: collapsed
         }
         refreshButton.isHidden = !canRefresh
+        needsLayout = true
         needsDisplay = true
     }
 
-    func focusEditor() {
+    /// Puts the cursor in the editor: at `range`, or on the header line when nil (New).
+    func focusEditor(range: NSRange? = nil) {
         window?.makeFirstResponder(editor)
-        editor.setSelectedRange(NSRange(location: 0, length: 0))   // New: cursor on the header line
+        let length = (editor.string as NSString).length
+        let location = min(range?.location ?? 0, length)
+        editor.setSelectedRange(NSRange(location: location, length: min(range?.length ?? 0, length - location)))
+        if range != nil { editor.scrollRangeToVisible(editor.selectedRange()) }
+    }
+
+    /// The editor's selection while this card is being edited.
+    var editingSelection: NSRange? { isEditing ? editor.selectedRange() : nil }
+
+    func dropFocus() {
+        if window?.firstResponder === editor { window?.makeFirstResponder(nil) }
     }
 
     func editingStateChanged() {
@@ -224,6 +274,7 @@ final class CardView: NSView {
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        guard case .desktop = home else { return }
         let lineWidth: CGFloat = isEditing ? 2 : 1
         let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
         CardShape.fill.setFill()
@@ -249,11 +300,15 @@ final class CardView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if face?.collapsed == true, content.contains(point), point.y < collapsedHeader.frame.minY {
-            send(.setCollapsed(id, false))      // collapsed body: expand just this card
+        if let face, face.collapsed, content.contains(point), point.y < collapsedHeader.frame.minY {
+            send(.setCollapsed(face.id, false))     // collapsed body: expand just this card
+            focusEditor(range: NSRange(location: (editor.string as NSString).length, length: 0))
             return
         }
-        _ = dragIfMoved(event)                  // collapsed header or the margin: drag
+        switch home {
+        case .desktop: _ = dragIfMoved(event)       // collapsed header or the margin: drag
+        case .stack: super.mouseDown(with: event)   // the margin is the stack's edge bands
+        }
     }
 
     func setHovering(_ on: Bool) {
@@ -267,20 +322,20 @@ final class CardView: NSView {
 
     /// Header press: drag and snap if the pointer moves; report a plain click otherwise.
     private func dragIfMoved(_ event: NSEvent) -> Bool {
-        guard let window, let center = trackWindowDrag(from: event, in: window) else { return false }
+        guard case .desktop(let slotNear) = home, let id = face?.id, let window,
+              let center = trackWindowDrag(from: event, in: window) else { return false }
         send(.move(id, to: slotNear(center)))   // same slot → no model change; render snaps it back
         return true
     }
 
     private func confirmDelete() {
-        guard let window else { return }
+        guard let window, let id = face?.id else { return }
         let alert = NSAlert()
         alert.messageText = "Delete this card?"
         alert.informativeText = "Its Markdown file moves to the Trash."
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         alert.buttons.first?.hasDestructiveAction = true
-        let id = self.id
         alert.beginSheetModal(for: window) { [weak self] response in
             if response == .alertFirstButtonReturn { self?.send(.delete(id)) }
         }
