@@ -15,6 +15,7 @@ final class DeskController {
     /// One window per popped card, created on pop and closed when the card leaves the desktop.
     private var cardWindows: [CardID: CardWindow] = [:]
     private lazy var stackWindow = StackWindow(send: { [unowned self] in self.send($0) }, menu: appMenu,
+                                               toggleHidden: { [unowned self] in self.toggleHidden() },
                                                drag: windowDrag(.stack))
     /// The outline of the slot a drag would snap to; visible only while something is dragged.
     private let guide = SlotGuide()
@@ -23,7 +24,7 @@ final class DeskController {
         deliver: { [unowned self] id, summary in self.send(.storeSummary(id, summary)) })
     private let library: Library
     private let keys: KeyStore
-    /// The app's menu (Show all, Hide all, Settings…, Quit) for the stack's ribbon button.
+    /// The app's menu (Settings…, Quit) for the stack's ribbon button.
     private let appMenu: () -> NSMenu
     private var pendingSave: Task<Void, Never>?
     private var saveFailing = false
@@ -84,7 +85,7 @@ final class DeskController {
         }
     }
 
-    /// ⌥⌘C.
+    /// ⌥⌘C, and the stack ribbon's Hide all / Show all button.
     func toggleHidden() { setHidden(!visibility.isHidden) }
 
     func openStack() {
@@ -140,7 +141,7 @@ final class DeskController {
             setVisible(window, visibility.shows(face.id))
         }
         stackWindow.apply(desk.stackFace(hasKey: keys.apiKey != nil), cell: grid.frame(of: desk.stackPlace),
-                          ribbonOnly: !visibility.showsStackCard)
+                          visibility: visibility)
         setVisible(stackWindow, true)   // Hide all keeps the ribbon
     }
 
@@ -173,6 +174,8 @@ final class DeskController {
             })
     }
 
+    /// Where a dragged window's center counts as being: past the limit `Grid` sets, at the limit,
+    /// which is where the drop then lands the window.
     private func center(of frame: CGRect) -> GridPoint {
         grid.point(at: CGPoint(x: frame.midX, y: frame.midY))
     }

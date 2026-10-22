@@ -10,9 +10,10 @@ final class StackWindow: NSWindow {
     /// The full card frame from the last `apply`, which the window is only the top of under Hide all.
     private var cardFrame = CGRect.zero
 
-    init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu, drag: WindowDrag) {
+    init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu, toggleHidden: @escaping () -> Void,
+         drag: WindowDrag) {
         self.send = send
-        stackView = StackView(send: send, menu: menu)
+        stackView = StackView(send: send, menu: menu, toggleHidden: toggleHidden)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         configureAsCard(self)
         contentView = stackView
@@ -54,11 +55,12 @@ final class StackWindow: NSWindow {
         stackView.editingStateChanged()
     }
 
-    /// `ribbonOnly` (Hide all) shrinks the window to the top of `cell` and hides the card area.
-    func apply(_ face: StackFace, cell: CGRect, ribbonOnly: Bool) {
+    /// Under Hide all (`visibility`) the window shrinks to the top of `cell` and the card area
+    /// goes; the ribbon's button then offers Show all.
+    func apply(_ face: StackFace, cell: CGRect, visibility: Visibility) {
         cardFrame = cell
-        stackView.apply(face, showsCard: !ribbonOnly)
-        let frame = ribbonOnly ? Self.ribbonOnlyFrame(in: cell) : cell
+        stackView.apply(face, visibility: visibility)
+        let frame = visibility.showsStackCard ? cell : Self.ribbonOnlyFrame(in: cell)
         guard self.frame != frame else { return }
         if isVisible && self.frame.size == frame.size {
             animator().setFrame(frame, display: true)   // snapping or sliding back on screen
@@ -89,9 +91,11 @@ final class StackWindow: NSWindow {
 }
 
 /// Looks like one card: a sky-blue ribbon with the toolbar (New, Pop, Clarity), "Desktop full",
-/// the count badge and the app menu button, above the selected stacked card, which is a full
-/// `CardView`. The window's margin is four invisible edge bands that select another stacked
-/// card: left/top the previous, right/bottom the next. Pop takes the selected card.
+/// the Hide all / Show all button and the app menu button, above the selected stacked card, which
+/// is a full `CardView`. The count badge sits in that card's bottom-right corner, and in the
+/// ribbon beside the Show all button while Hide all has removed the card. The window's margin is
+/// four invisible edge bands that select another stacked card: left/top the previous,
+/// right/bottom the next. Pop takes the selected card.
 /// The stack draws the card shape and the editing border; the `CardView` inside draws nothing.
 private final class StackView: NSView {
     /// A press on the ribbon's empty space: true when it moved and dragged the window, false for a click.
@@ -100,11 +104,21 @@ private final class StackView: NSView {
     private let toolbar = NSStackView()
     private let popButton: ActionButton
     private let clarityButton: ActionButton
-    private let menuButton = ActionButton(symbol: "ellipsis.circle", help: "Show all, hide all, settings and quit")
+    private let toggleButton: ActionButton
+    private let menuButton = ActionButton(symbol: "ellipsis.circle", help: "Settings and quit")
     private let cardView: CardView
     /// False under Hide all: the window is only the ribbon, and the edge bands do nothing.
     private(set) var showsCard = true
-    private let badge = NSTextField(labelWithString: "0")
+    /// Hide all is on, so the toggle offers Show all.
+    private var allHidden = false {
+        didSet {
+            guard allHidden != oldValue else { return }
+            let help = allHidden ? "Show all" : "Hide all"
+            toggleButton.image = NSImage(systemSymbolName: allHidden ? "eye" : "eye.slash", accessibilityDescription: help)
+            toggleButton.toolTip = help
+        }
+    }
+    private let badge = PassiveLabel(labelWithString: "0")
     private let fullLabel = NSTextField(labelWithString: "Desktop full")
     private var hoveredEdge: Edge? {
         didSet { if hoveredEdge != oldValue { needsDisplay = true } }
@@ -117,11 +131,12 @@ private final class StackView: NSView {
     static let ribbon = NSColor(srgbRed: 0.56, green: 0.80, blue: 0.98, alpha: 1)
     static let ribbonText = NSColor(srgbRed: 0.04, green: 0.21, blue: 0.37, alpha: 1)
 
-    init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu) {
+    init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu, toggleHidden: @escaping () -> Void) {
         self.send = send
         cardView = CardView(home: .stack, send: send)
         popButton = ActionButton(title: "Pop", help: "Bring the selected card out") { send(.pop) }
         clarityButton = ActionButton(title: "Clarity: Off", help: "Collapse or expand every card") { send(.toggleClarity) }
+        toggleButton = ActionButton(symbol: "eye.slash", help: "Hide all") { toggleHidden() }
         super.init(frame: .zero)
 
         let newButton = ActionButton(title: "New", help: "Create a card") { send(.new(at: Date())) }
@@ -132,6 +147,9 @@ private final class StackView: NSView {
         }
         toolbar.spacing = 14
         addSubview(toolbar)
+
+        toggleButton.contentTintColor = Self.ribbonText
+        addSubview(toggleButton)
 
         menuButton.contentTintColor = Self.ribbonText
         menuButton.handler = { [unowned menuButton] in
@@ -147,20 +165,22 @@ private final class StackView: NSView {
         badge.textColor = Self.ribbonText
         badge.alignment = .center
         badge.wantsLayer = true
-        badge.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.75).cgColor
         badge.layer?.cornerRadius = 8
         badge.toolTip = "Cards in the stack"
         addSubview(badge)
 
         fullLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         fullLabel.textColor = NSColor(srgbRed: 0.70, green: 0.07, blue: 0.07, alpha: 1)
+        fullLabel.lineBreakMode = .byTruncatingTail
+        fullLabel.toolTip = "Desktop full: no free slot for Pop or New"   // truncated, it may read only "…"
         fullLabel.isHidden = true
         addSubview(fullLabel)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func apply(_ face: StackFace, showsCard: Bool) {
+    func apply(_ face: StackFace, visibility: Visibility) {
+        let showsCard = visibility.showsStackCard
         if self.showsCard != showsCard {
             self.showsCard = showsCard
             cardView.isHidden = !showsCard
@@ -169,6 +189,7 @@ private final class StackView: NSView {
                 hoveredEdge = nil
             }
         }
+        allHidden = visibility.isHidden
         cardView.apply(face.selected)
         badge.stringValue = "\(face.count)"
         fullLabel.isHidden = !face.desktopFull
@@ -204,23 +225,43 @@ private final class StackView: NSView {
                width: bounds.width, height: Self.ribbonHeight + CardShape.gap)
     }
 
+    /// Right to left, the ribbon holds the menu button, the Hide all / Show all button, the badge
+    /// (only under Hide all, since the card area that normally has it is gone) and "Desktop
+    /// full". The toolbar and the buttons never move: "Desktop full" takes what room is left
+    /// and truncates, and the badge hides once there is no room for it.
     override func layout() {
         super.layout()
         let inner = content
         let ribbonMid = ribbonRect.minY + Self.ribbonHeight / 2
-        toolbar.frame = NSRect(x: inner.minX, y: ribbonMid - 11, width: inner.width * 0.6, height: 20)
-        menuButton.frame = NSRect(x: inner.maxX - 18, y: ribbonMid - 10, width: 18, height: 18)
-        let badgeWidth = max(22, badge.fittingSize.width + 10)
-        badge.frame = NSRect(x: menuButton.frame.minX - 8 - badgeWidth, y: ribbonMid - 9.5, width: badgeWidth, height: 17)
-        let fullWidth = fullLabel.fittingSize.width
-        fullLabel.frame = NSRect(x: badge.frame.minX - 8 - fullWidth, y: ribbonMid - 9, width: fullWidth, height: 15)
         // The card's own margin reaches into the edge bands; its text stays inside them.
         let left = max(inner.minX - CardView.margin.width, bounds.minX)
         let right = min(inner.maxX + CardView.margin.width, bounds.maxX)
         let bottom = max(inner.minY - CardView.margin.height, bounds.minY)
+        let card = NSRect(x: left, y: bottom, width: right - left, height: ribbonRect.minY - bottom)
+        if showsCard { cardView.frame = card }
+
+        toolbar.frame = NSRect(x: inner.minX, y: ribbonMid - 11, width: toolbar.fittingSize.width, height: 20)
+        menuButton.frame = NSRect(x: inner.maxX - 18, y: ribbonMid - 10, width: 18, height: 18)
+        toggleButton.frame = NSRect(x: menuButton.frame.minX - 8 - 18, y: ribbonMid - 10, width: 18, height: 18)
+        let badgeWidth = max(22, badge.fittingSize.width + 10)
+        var trailing = toggleButton.frame.minX
         if showsCard {
-            cardView.frame = NSRect(x: left, y: bottom, width: right - left, height: ribbonRect.minY - bottom)
+            // In the card's bottom-right at its content inset: clear of the hover buttons at the
+            // top and of the formatting bar's buttons, which are at the left of its row.
+            let text = card.insetBy(dx: CardView.margin.width, dy: CardView.margin.height)
+            badge.frame = NSRect(x: text.maxX - badgeWidth, y: text.minY + (CardView.formatBarHeight - 17) / 2,
+                                 width: badgeWidth, height: 17)
+            badge.layer?.backgroundColor = Self.ribbon.withAlphaComponent(0.4).cgColor
+            badge.isHidden = false
+        } else {
+            badge.frame = NSRect(x: trailing - 8 - badgeWidth, y: ribbonMid - 9.5, width: badgeWidth, height: 17)
+            badge.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.75).cgColor
+            badge.isHidden = badge.frame.minX < toolbar.frame.maxX + 8
+            if !badge.isHidden { trailing = badge.frame.minX }
         }
+        let room = max(trailing - toolbar.frame.maxX - 2 * 8, 0)
+        let fullWidth = min(fullLabel.fittingSize.width, room)
+        fullLabel.frame = NSRect(x: trailing - 8 - fullWidth, y: ribbonMid - 9, width: fullWidth, height: 15)
     }
 
     // MARK: Drawing
@@ -280,4 +321,9 @@ private final class StackView: NSView {
         guard showsCard, !content.contains(point) else { return nil }
         return EdgeBands.edge(at: point, in: bounds)
     }
+}
+
+/// A label that takes no click, so a press on it reaches whatever is under it.
+private final class PassiveLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

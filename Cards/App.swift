@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // things out without touching ~/Documents/Cards).
         let folder = UserDefaults.standard.string(forKey: "CardsFolder").map { URL(filePath: $0, directoryHint: .isDirectory) }
         let controller = DeskController(library: Library(folder: folder ?? Library.defaultFolder), keys: keys,
-                                        appMenu: { [unowned self] in self.makeAppMenu(includingOpenStack: false) })
+                                        appMenu: { [unowned self] in self.makeAppMenu(for: .ribbon) })
         self.controller = controller
         statusItem = makeStatusItem()
         hotKey = HotKey(keyCode: kVK_ANSI_C, modifiers: optionKey | cmdKey) { controller.toggleHidden() }
@@ -52,25 +52,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// Menu bar icon. A crowded menu bar can hide it behind the notch, so the stack's ribbon
-    /// offers the same menu.
+    /// Menu bar icon. A crowded menu bar can hide it behind the notch, so the stack's ribbon has
+    /// Hide all as a button and a menu with the rest.
     private func makeStatusItem() -> NSStatusItem {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: "Cards")
-        item.menu = makeAppMenu(includingOpenStack: true)
+        item.menu = makeAppMenu(for: .menuBar)
         return item
     }
 
-    /// The app's menu: Show all / Hide all / Open stack / Settings… / Quit. The one list for both
-    /// the menu bar icon and the stack's ribbon button, which leaves out Open stack.
-    private func makeAppMenu(includingOpenStack: Bool) -> NSMenu {
+    private enum MenuSurface { case menuBar, ribbon }
+
+    /// The app's menu. The ribbon's is Settings… and Quit: Hide all is a ribbon button, and Open
+    /// stack means nothing on the stack. The menu bar icon's adds Show all / Hide all / Open
+    /// stack above them.
+    private func makeAppMenu(for surface: MenuSurface) -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Show All", action: #selector(showAll), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Hide All", action: #selector(hideAll), keyEquivalent: "").target = self
-        if includingOpenStack {
+        if surface == .menuBar {
+            menu.addItem(withTitle: "Show All", action: #selector(showAll), keyEquivalent: "").target = self
+            menu.addItem(withTitle: "Hide All", action: #selector(hideAll), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Open Stack", action: #selector(openStack), keyEquivalent: "").target = self
+            menu.addItem(.separator())
         }
-        menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Cards", action: #selector(quit), keyEquivalent: "").target = self
