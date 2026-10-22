@@ -12,11 +12,11 @@ enum Palette {
     /// The bright specular edge just inside the outline.
     static let rim = NSColor.white
     static let ink = NSColor(hex: 0x2B2520)
-    /// List markers, summary text, the card hover buttons and the edge-band chevron.
+    /// List markers, summary text, the card hover buttons, the edge-band chevron and Clarity when off.
     static let inkSoft = NSColor(hex: 0x716453)
     /// The "Title" placeholder.
     static let inkFaint = NSColor(hex: 0xB3A68F)
-    /// Ribbon buttons and the badge text.
+    /// New, the ribbon's icon buttons and the badge text.
     static let ribbonInk = NSColor(hex: 0x46361F)
     /// Card and stack border.
     static let line = NSColor(hex: 0x5A4630, alpha: 0.18)
@@ -24,7 +24,7 @@ enum Palette {
     static let shade = NSColor(hex: 0x5A4630, alpha: 0.07)
     /// Stroke of the dashed slot guide.
     static let guide = NSColor(hex: 0x5A4630, alpha: 0.45)
-    /// The snapping slot guide and Clarity: On.
+    /// The snapping slot guide and Clarity when on.
     static let accent = NSColor(hex: 0x823F1D)
     /// The editing border: light caramel, so the card you type in is marked without a dark frame.
     static let focus = NSColor(hex: 0xDDB880)
