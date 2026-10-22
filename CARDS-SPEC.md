@@ -1,4 +1,4 @@
-# Cards — prototype spec (agreed 2026-10-21)
+# Cards — prototype spec (agreed 2026-10-21, revised 2026-10-22)
 
 Personal-use macOS prototype. Native Swift app built with Xcode.
 
@@ -9,6 +9,13 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Cards follow the user across Spaces and over full-screen apps.
 - App home: menu bar icon with Show all / Hide all / Open stack / Quit. Global shortcut ⌥⌘C hides/shows every card.
 
+## Hide all (revised 2026-10-22)
+- Hide all (menu bar icon, the stack's menu, or ⌥⌘C) hides every popped card and shrinks the stack to just its blue ribbon in the top-left slot. The ribbon never hides.
+- While hidden, the ribbon keeps New, Pop, Clarity, the count badge and the menu button; the menu offers Show all.
+- Show all, ⌥⌘C, or opening the app again (Spotlight, Finder, Launchpad) while it runs brings back the stack's card area and every popped card, and brings the app forward.
+- New or Pop while hidden shows only that card; the rest stay hidden. Its slot is chosen as if the hidden cards were in place.
+- Hidden is not persisted: every launch starts with everything shown.
+
 ## Grid and sizing
 - Screen is an invisible 5 × 4 grid. Card width = screen width / 5; height = (screen height below menu bar) / 4.
 - 20 slots: 19 for cards, 1 (top-left) for the stack.
@@ -18,38 +25,53 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Its own card-sized window in the top-left slot: the control center, marked by a sky-blue ribbon on top.
 - Looks like one card: the ribbon holds the toolbar and a count badge; below it, the selected stacked card (header and body). No list or divider for the cards underneath.
 - Toolbar: New, Pop, Clarity on/off (global), and a menu button with Show all / Hide all / Settings… / Quit, so the control center works even when the menu bar icon is hidden.
+- The selected stacked card is a full card (revised 2026-10-22): edited in place exactly like a popped card (see Card content and editing), with the same per-card buttons except ↩ Stack, and collapsible to its summary (see Clarity mode).
+- Deleting the selected card shows the one underneath.
+- At launch the stack shows its top card, or the blank page when the stack is empty.
+- The count badge counts real cards only, never the blank page.
 
 ## Pop / return / find space
 - Pop takes the first grid slot (left→right, top→bottom) not occupied by another card. Other apps' windows are ignored.
 - All slots full → Pop refuses and the stack shows "Desktop full".
+- Pop is disabled while the blank page shows.
+- Popping the card being edited on the stack moves the cursor with it; the stack then shows the next card.
 - Drag a card by its header; on release it snaps to the nearest slot, swapping with the occupant if any.
 - "↩ Stack" button returns a card to the top of the stack.
 
-## Edge switching (stack only; revised 2026-10-21)
-- Only the stack window has edge bands: an invisible band = 5% of its width/height along all four edges. Popped cards have none.
+## Switching stacked cards (stack only; revised 2026-10-22)
 - Purpose: show the cards hidden under the stack.
-- Select a card with the bands, then operate on it: right/bottom band click → the selected card goes to the bottom and the next one shows; left/top → the bottom card comes back up. A loop.
+- The stack is a loop. Next sends the selected card to the bottom and shows the one under it; previous brings the bottom card back up.
+- The loop always holds one blank page, after the last card and before the first.
+- Two-finger horizontal swipe on the stack: one card per swipe, next or previous following the system scroll direction. Vertical scroll scrolls the selected card's text.
+- Edge bands stay as a click alternative: an invisible band = 5% of the stack's width/height along all four edges. Right/bottom = next, left/top = previous. On hover the band tints faintly and shows ‹ or ›. Popped cards have no bands.
+- Because of the blank page, swiping and the bands work with any number of stacked cards, including zero or one.
 - Pop takes the selected card.
-- On hover the band tints faintly and shows ‹ or ›. Fewer than two stacked cards → bands do nothing.
+
+## Blank page (new 2026-10-22)
+- Typing its first character turns it into a real card in the same place in the loop (the bottom of the stack). The card stays selected with the cursor in it, and a new blank page appears right after it.
+- Left untouched, it creates nothing.
+- Always expanded, even with Clarity ON. No per-card buttons until it becomes a card.
 
 ## Card content and editing
+- Applies to popped cards and to the selected stacked card alike.
 - First line (first paragraph) is automatically the bold level-1 header, regardless of formatting.
 - Body formatting: bold, italic, bullet list, numbered list, checkboxes. Nothing else.
 - Apply via ⌘B / ⌘I; typing `- `, `1. `, `[] ` starts lists; Enter continues a list, Enter on an empty item ends it.
 - A five-button formatting bar appears along the bottom of a card only while editing.
 - Scroll wheel/trackpad scrolls whichever card the pointer is over. The card being edited has a stronger border.
-- Per-card buttons (clarity toggle, ↩ Stack, trash) fade in on hover only. Trash asks "Delete this card?".
-- New: creates a blank card and pops it straight out, cursor on the header line, always expanded.
+- Per-card buttons (clarity toggle, summary refresh, ↩ Stack, trash) fade in on hover only. Trash asks "Delete this card?". The stacked card has all of them except ↩ Stack.
+- New: creates a blank card and pops it straight out, cursor on the header line, always expanded. Desktop full → New shows the stack's blank page instead.
 
 ## Clarity mode
-- Collapsed card: same size and position, header stays, body replaced by the 2-line AI summary in a lighter style.
-- Stack's Clarity button is a global toggle: ON collapses every popped card; OFF expands every card.
-- Clicking a collapsed card's body expands just that card; does not flip the global button.
+- Collapsed card: same size and position, header stays, body replaced by the 2-line AI summary in a lighter style. Applies on the stack too.
+- Stack's Clarity button is a global toggle: ON collapses every card, stacked ones included; OFF expands every card.
+- Clicking a collapsed card's body expands just that card and puts the cursor in it; does not flip the global button.
 - Per-card button toggles just that card.
-- A card popped while global is ON comes out collapsed; otherwise its last state.
+- A card popped keeps its state, so a card popped while global is ON comes out collapsed.
 
 ## AI summaries
 - Provider: Anthropic API, model Claude Haiku 5.5. API key pasted once into the app's settings, stored outside the code.
+- Every card gets one, stacked or popped, under the same rules.
 - Trigger: a few seconds after typing stops; cached with the card; regenerated only on content change; per-card refresh button.
 - No summary for empty or one-line bodies.
 - Prompt: header + body in → at most two short sentences (~25 words), no preamble, same language as the card.
