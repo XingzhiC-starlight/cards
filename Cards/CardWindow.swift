@@ -300,22 +300,25 @@ func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CG
     guard mouseDown.clickCount == 1 else { return nil }
     let start = screenLocation(of: mouseDown)
     let origin = window.frame.origin
+    func follow(_ event: NSEvent) {
+        let now = screenLocation(of: event)
+        window.setFrameOrigin(NSPoint(x: origin.x + now.x - start.x, y: origin.y + now.y - start.y))
+    }
     var dragging = false
     while let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp],
                                        until: .distantFuture, inMode: .eventTracking, dequeue: false) {
         if event.type == .leftMouseUp {
             guard dragging else { return nil }                 // a click: leave the mouse-up queued
             _ = window.nextEvent(matching: .leftMouseUp)       // consume it: the drag is over
+            follow(event)                                      // a quick flick can release further on
             return CGPoint(x: window.frame.midX, y: window.frame.midY)
         }
         _ = window.nextEvent(matching: .leftMouseDragged)      // consume the drag we peeked at
         let now = screenLocation(of: event)
-        let dx = now.x - start.x
-        let dy = now.y - start.y
-        if !dragging && hypot(dx, dy) < threshold { continue }
+        if !dragging && hypot(now.x - start.x, now.y - start.y) < threshold { continue }
         if !dragging { window.orderFront(nil) }
         dragging = true
-        window.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
+        follow(event)
     }
     return nil
 }
