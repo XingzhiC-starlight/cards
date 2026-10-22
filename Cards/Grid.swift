@@ -74,7 +74,7 @@ struct Grid: Equatable {
     }
 }
 
-/// A card edge, for the invisible switching bands.
+/// An edge of the stack window, for its invisible flipping bands.
 enum Edge: CaseIterable {
     case left, top, right, bottom
 
@@ -88,12 +88,12 @@ enum Edge: CaseIterable {
 }
 
 enum EdgeBands {
-    /// Band depth: 5 % of the card's width (left/right bands) or height (top/bottom bands).
+    /// Band depth: 5 % of the window's width (left/right bands) or height (top/bottom bands).
     static let fraction: CGFloat = 0.05
 
-    /// The band containing `point` (card-local coordinates, y up), or nil. In a corner, where two
-    /// bands overlap, the edge the point is relatively closer to wins, so every point has at most
-    /// one meaning. Callers ask only when the stack is non-empty (`CardFace.canSwitch`).
+    /// The band containing `point` (window-local coordinates, y up), or nil. In a corner, where
+    /// two bands overlap, the edge the point is relatively closer to wins, so every point has at
+    /// most one meaning. Callers ask only when there is something to flip (`StackFace.canFlip`).
     static func edge(at point: CGPoint, in bounds: CGRect) -> Edge? {
         guard bounds.contains(point) else { return nil }
         let bandX = bounds.width * fraction
@@ -105,5 +105,17 @@ enum EdgeBands {
             (.top, (bounds.maxY - point.y) / bandY),
         ]
         return depth.filter { $0.depth < 1 }.min { $0.depth < $1.depth }?.edge
+    }
+
+    /// The area of one band, for drawing its hover tint.
+    static func rect(of edge: Edge, in bounds: CGRect) -> CGRect {
+        let bandX = bounds.width * fraction
+        let bandY = bounds.height * fraction
+        return switch edge {
+        case .left: CGRect(x: bounds.minX, y: bounds.minY, width: bandX, height: bounds.height)
+        case .right: CGRect(x: bounds.maxX - bandX, y: bounds.minY, width: bandX, height: bounds.height)
+        case .top: CGRect(x: bounds.minX, y: bounds.maxY - bandY, width: bounds.width, height: bandY)
+        case .bottom: CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bandY)
+        }
     }
 }

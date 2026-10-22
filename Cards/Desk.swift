@@ -50,14 +50,6 @@ struct Summary: Equatable {
     }
 }
 
-/// A card on the desktop, plus where it sits in its edge-switching ring.
-struct Popped: Equatable {
-    var card: Card
-    /// The displayed card sits just before `stack[cursor]` in its ring (`stack.count` means
-    /// after the last). Invariant `0...stack.count`, kept by the two stack helpers in `Desk`.
-    var cursor: Int
-}
-
 enum Direction: Equatable {
     case previous, next
 }
@@ -73,8 +65,8 @@ enum Command {
     case pop(CardID?)
     /// Per-card "↩ Stack" button: the card goes to the top of the stack.
     case returnToStack(CardID)
-    /// Click in an edge band. Ignored when the stack is empty.
-    case switchCard(CardID, Direction)
+    /// Click in one of the stack's edge bands: flip through the stacked cards.
+    case flipStack(Direction)
     /// Header drag released over `Slot`; swaps with the occupant, if any.
     case move(CardID, to: Slot)
     /// Trash button, after the user confirmed "Delete this card?".
@@ -105,11 +97,10 @@ enum Command {
 ///
 /// Invariants, all kept by construction in this file:
 /// - every card is in exactly one place (one slot cell or one stack position);
-/// - `slots.count == Slot.count`, so the stack's bottom-right cell can never hold a card;
-/// - every `Popped.cursor` is in `0...stack.count`.
+/// - `slots.count == Slot.count`, so the stack's bottom-right cell can never hold a card.
 struct Desk: Equatable {
     /// Indexed by `Slot.index`.
-    private(set) var slots: [Popped?]
+    private(set) var slots: [Card?]
     /// Top card first.
     private(set) var stack: [Card]
     /// Global clarity (the stack's Clarity button). Per-card state is `Card.collapsed`.
@@ -117,8 +108,8 @@ struct Desk: Equatable {
 
     /// Rebuilds the desk from disk. `notes` decides which cards exist; `saved` only places them.
     /// Total over any input: unknown ids, invalid or doubly-used slots and duplicates are dropped,
-    /// cursors are clamped, and cards the sidecar never heard of join the bottom of the stack in
-    /// id (that is, creation) order. A missing sidecar (`SavedDesk()`) puts every card in the stack.
+    /// and cards the sidecar never heard of join the bottom of the stack in id (that is, creation)
+    /// order. A missing sidecar (`SavedDesk()`) puts every card in the stack.
     init(notes: [CardID: Note], saved: SavedDesk) {
         let collapsed = Set(saved.collapsed)
         var summaries: [CardID: Summary] = [:]
@@ -128,11 +119,11 @@ struct Desk: Equatable {
         }
 
         var placed = Set<CardID>()
-        var slots = [Popped?](repeating: nil, count: Slot.count)
+        var slots = [Card?](repeating: nil, count: Slot.count)
         for p in saved.placements {
             guard let slot = Slot(index: p.slot), slots[slot.index] == nil,
                   !placed.contains(p.card), let c = card(p.card) else { continue }
-            slots[slot.index] = Popped(card: c, cursor: p.cursor)
+            slots[slot.index] = c
             placed.insert(p.card)
         }
         var stack: [Card] = []
@@ -140,9 +131,6 @@ struct Desk: Equatable {
             guard let c = card(id) else { continue }
             stack.append(c)
             placed.insert(id)
-        }
-        for i in slots.indices {
-            if let cursor = slots[i]?.cursor { slots[i]?.cursor = min(max(cursor, 0), stack.count) }
         }
         self.slots = slots
         self.stack = stack
@@ -157,9 +145,9 @@ struct Desk: Equatable {
     var allCards: [Card] { poppedCards + stack }
 
     /// The cards on the desktop, in slot order.
-    var poppedCards: [Card] { slots.compactMap { $0?.card } }
+    var poppedCards: [Card] { slots.compactMap { $0 } }
 
-    func slot(of id: CardID) -> Slot? { Slot.all.first { slots[$0.index]?.card.id == id } }
+    func slot(of id: CardID) -> Slot? { Slot.all.first { slots[$0.index]?.id == id } }
 
     /// A file stem for a new card: "yyyy-MM-dd HHmmss", with " 2", " 3"… if already taken.
     func freshID(at date: Date) -> CardID {
@@ -176,8 +164,8 @@ struct Desk: Equatable {
 
     // MARK: The one mutation entry point
 
-    /// Applies `command` and returns the card that just arrived on the desktop (the new card, the
-    /// popped card, the card switched in), if any.
+    /// Applies `command` and returns the card that just arrived on the desktop (the new card or
+    /// the popped card), if any.
     /// Every branch is total: a command naming a card that no longer exists is a no-op.
     @discardableResult
     mutating func apply(_ command: Command) -> CardID? {
@@ -185,7 +173,7 @@ struct Desk: Equatable {
         case .new(let date): return newCard(at: date)
         case .pop(let id): return pop(id)
         case .returnToStack(let id): returnToStack(id)
-        case .switchCard(let id, let direction): return switchCard(id, direction)
+        case .flipStack(let direction): flipStack(direction)
         case .move(let id, let slot): move(id, to: slot)
         case .delete(let id): delete(id)
         case .edit(let id, let note): update(id) { $0.note = note }
@@ -204,64 +192,38 @@ struct Desk: Equatable {
     private mutating func newCard(at date: Date) -> CardID? {
         guard let slot = firstFreeSlot else { return nil }   // New refuses when the desktop is full
         let card = Card(id: freshID(at: date), note: .blank, collapsed: false)   // always expanded
-        slots[slot.index] = Popped(card: card, cursor: 0)
+        slots[slot.index] = card
         return card.id
     }
 
     /// Pops the top card (`id == nil`) or the named stacked card into the first free slot.
-    /// The card re-enters its ring where it left the stack, so "next" shows the card that was
-    /// below it and "previous" the one above.
     private mutating func pop(_ id: CardID?) -> CardID? {
         let index = id == nil ? (stack.isEmpty ? nil : 0) : stack.firstIndex { $0.id == id }
         guard let slot = firstFreeSlot, let i = index else { return nil }
-        var card = removeFromStack(at: i)
+        var card = stack.remove(at: i)
         if clarity { card.collapsed = true }   // otherwise: its last state
-        slots[slot.index] = Popped(card: card, cursor: min(i, stack.count))
+        slots[slot.index] = card
         return card.id
     }
 
     private mutating func returnToStack(_ id: CardID) {
-        guard let slot = slot(of: id), let popped = slots[slot.index] else { return }
+        guard let slot = slot(of: id), let card = slots[slot.index] else { return }
         slots[slot.index] = nil
-        insertIntoStack(popped.card, at: 0)
+        stack.insert(card, at: 0)
     }
 
-    /// Edge switch. The displayed card D with cursor k defines the ring
-    ///
-    ///     stack[0..<k] + [D] + stack[k...]      (read cyclically)
-    ///
-    /// `.next` brings in the card after D in that ring, `.previous` the card before it. The two
-    /// trade places: D takes the incoming card's spot in the stack, and the cursor moves so the
-    /// ring is unchanged. The slot never changes. Consequences: repeated `.next` visits every
-    /// stacked card in stack order and then D again (a loop of `stack.count + 1`), and
-    /// `.previous` exactly undoes `.next`. Only one stack spot changes, so the stack top that
-    /// Pop and every other popped card see is disturbed as little as possible.
-    ///
-    /// D shown, cursor 0, stack [a, b, c]:
-    ///
-    ///     next → a shown, stack [D, b, c], cursor 1
-    ///     next → b shown, stack [D, a, c], cursor 2
-    ///     next → c shown, stack [D, a, b], cursor 3
-    ///     next → D shown, stack [c, a, b], cursor 1   (wrapped; ring D→a→b→c→D intact)
-    private mutating func switchCard(_ id: CardID, _ direction: Direction) -> CardID? {
-        guard let slot = slot(of: id), var popped = slots[slot.index], !stack.isEmpty else { return nil }
-        let n = stack.count
-        let k = min(popped.cursor, n)
-        let spot = switch direction {
-        case .next: k == n ? 0 : k
-        case .previous: k == 0 ? n - 1 : k - 1
+    /// The stack is a loop: `.next` sends the top card to the bottom, so the one under it shows;
+    /// `.previous` brings the bottom card back to the top. Each undoes the other, and `count`
+    /// flips in one direction show every stacked card once. Pop then takes whichever card shows.
+    private mutating func flipStack(_ direction: Direction) {
+        guard stack.count > 1 else { return }
+        switch direction {
+        case .next: stack.append(stack.removeFirst())
+        case .previous: stack.insert(stack.removeLast(), at: 0)
         }
-        var incoming = stack[spot]
-        stack[spot] = popped.card                 // the outgoing card keeps its last clarity state
-        if clarity { incoming.collapsed = true }  // spec: swapped in while global is ON → collapsed
-        popped.card = incoming
-        popped.cursor = direction == .next ? spot + 1 : spot
-        slots[slot.index] = popped
-        return incoming.id
     }
 
-    /// Header drag released: move to `target`, swapping with its occupant. The cursor travels
-    /// with its card.
+    /// Header drag released: move to `target`, swapping with its occupant.
     private mutating func move(_ id: CardID, to target: Slot) {
         guard let from = slot(of: id), from != target else { return }
         slots.swapAt(from.index, target.index)
@@ -270,8 +232,8 @@ struct Desk: Equatable {
     private mutating func delete(_ id: CardID) {
         if let slot = slot(of: id) {
             slots[slot.index] = nil
-        } else if let i = stack.firstIndex(where: { $0.id == id }) {
-            _ = removeFromStack(at: i)
+        } else {
+            stack.removeAll { $0.id == id }
         }
     }
 
@@ -279,7 +241,7 @@ struct Desk: Equatable {
     /// "last state" is expanded too. Per-card expands never touch `clarity`.
     private mutating func toggleClarity() {
         clarity.toggle()
-        for i in slots.indices where slots[i] != nil { slots[i]?.card.collapsed = clarity }
+        for i in slots.indices where slots[i] != nil { slots[i]?.collapsed = clarity }
         if !clarity { for i in stack.indices { stack[i].collapsed = false } }
     }
 
@@ -291,36 +253,17 @@ struct Desk: Equatable {
         for (id, note) in notes { update(id) { if $0.note != note { $0.note = note } } }
         let known = Set(allCards.map(\.id))
         for (id, note) in notes.sorted(by: { $0.key < $1.key }) where !known.contains(id) {
-            insertIntoStack(Card(id: id, note: note), at: stack.count)
+            stack.append(Card(id: id, note: note))
         }
     }
 
     private mutating func update(_ id: CardID, _ change: (inout Card) -> Void) {
-        if let slot = slot(of: id), var popped = slots[slot.index] {
-            change(&popped.card)
-            slots[slot.index] = popped
+        if let slot = slot(of: id), var card = slots[slot.index] {
+            change(&card)
+            slots[slot.index] = card
         } else if let i = stack.firstIndex(where: { $0.id == id }) {
             change(&stack[i])
         }
-    }
-
-    // MARK: The only two ways the stack changes length
-
-    /// Inserting at `i` pushes every ring gap after `i` one place down, so each popped card's
-    /// neighbours stay its neighbours. A cursor exactly at `i` stays, which makes the inserted
-    /// card that popped card's "next".
-    private mutating func insertIntoStack(_ card: Card, at i: Int) {
-        stack.insert(card, at: i)
-        for s in slots.indices {
-            if let cursor = slots[s]?.cursor, cursor > i { slots[s]?.cursor = cursor + 1 }
-        }
-    }
-
-    private mutating func removeFromStack(at i: Int) -> Card {
-        for s in slots.indices {
-            if let cursor = slots[s]?.cursor, cursor > i { slots[s]?.cursor = cursor - 1 }
-        }
-        return stack.remove(at: i)
     }
 
     private static let idFormat: DateFormatter = {
@@ -340,8 +283,6 @@ struct CardFace: Equatable {
     let note: Note
     let collapsed: Bool
     let summary: SummaryFace
-    /// Edge bands are live only while the stack has cards.
-    let canSwitch: Bool
 }
 
 /// What a collapsed card shows in place of its body.
@@ -361,8 +302,12 @@ struct StackFace: Equatable {
     let clarity: Bool
     /// Derived from `firstFreeSlot`, so there is no "full" flag to set or clear.
     let desktopFull: Bool
+    /// The top card's content, previewed in the stack window.
+    let topNote: Note?
     var top: StackEntry? { entries.first }
     var count: Int { entries.count }
+    /// The edge bands flip the stack only when there is something under the top card.
+    var canFlip: Bool { count > 1 }
 }
 
 struct StackEntry: Equatable {
@@ -373,15 +318,15 @@ struct StackEntry: Equatable {
 extension Desk {
     func cardFaces(hasKey: Bool) -> [CardFace] {
         Slot.all.compactMap { slot in
-            guard let card = slots[slot.index]?.card else { return nil }
+            guard let card = slots[slot.index] else { return nil }
             return CardFace(id: card.id, slot: slot, note: card.note, collapsed: card.collapsed,
-                            summary: Desk.summaryFace(of: card, hasKey: hasKey), canSwitch: !stack.isEmpty)
+                            summary: Desk.summaryFace(of: card, hasKey: hasKey))
         }
     }
 
     var stackFace: StackFace {
         StackFace(entries: stack.map { StackEntry(id: $0.id, title: $0.note.title) },
-                  clarity: clarity, desktopFull: firstFreeSlot == nil)
+                  clarity: clarity, desktopFull: firstFreeSlot == nil, topNote: stack.first?.note)
     }
 
     /// The whole summary lifecycle as seen by the UI, from two facts: the card's latest attempt
@@ -417,7 +362,6 @@ struct SavedPlacement: Codable, Equatable {
     /// `Slot.index`; validated on load, since the file is outside the type system.
     var slot: Int
     var card: CardID
-    var cursor: Int
 }
 
 struct SavedSummary: Codable, Equatable {
@@ -433,7 +377,7 @@ extension Desk {
         return SavedDesk(
             clarity: clarity,
             placements: Slot.all.compactMap { slot in
-                slots[slot.index].map { SavedPlacement(slot: slot.index, card: $0.card.id, cursor: $0.cursor) }
+                slots[slot.index].map { SavedPlacement(slot: slot.index, card: $0.id) }
             },
             stack: stack.map(\.id),
             collapsed: cards.filter(\.collapsed).map(\.id).sorted(),

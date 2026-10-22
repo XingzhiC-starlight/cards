@@ -16,7 +16,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 
 ## Stack
 - Its own card-sized window in the bottom-right slot.
-- Shows: top card's header, count badge, scrollable list of all stacked headers (click one to pop that card).
+- Shows: a preview of the top card (its header and first lines), count badge, scrollable list of all stacked headers (click one to pop that card).
 - Toolbar: New, Pop, Clarity on/off (global).
 
 ## Pop / return / find space
@@ -25,11 +25,12 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Drag a card by its header; on release it snaps to the nearest slot, swapping with the occupant if any.
 - "↩ Stack" button returns a card to the top of the stack.
 
-## Edge switching
-- Each popped card has an invisible band = 5% of its width/height along all four edges.
-- Left/top band click → swap in the previous stacked card. Right/bottom → the next.
-- The displayed card goes back into the stack in the spot the incoming one left (a loop). The slot never changes.
-- On hover the band tints faintly and shows ‹ or ›. Empty stack → bands do nothing.
+## Edge switching (stack only; revised 2026-10-21)
+- Only the stack window has edge bands: an invisible band = 5% of its width/height along all four edges. Popped cards have none.
+- Purpose: show the cards hidden under the stack.
+- Right/bottom band click → the top card goes to the bottom and the next one shows. Left/top → the bottom card comes back to the top. A loop.
+- Pop takes whichever card is showing on top.
+- On hover the band tints faintly and shows ‹ or ›. Fewer than two stacked cards → bands do nothing.
 
 ## Card content and editing
 - First line (first paragraph) is automatically the bold level-1 header, regardless of formatting.
@@ -45,7 +46,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Stack's Clarity button is a global toggle: ON collapses every popped card; OFF expands every card.
 - Clicking a collapsed card's body expands just that card; does not flip the global button.
 - Per-card button toggles just that card.
-- A card popped or edge-swapped in while global is ON comes out collapsed; otherwise its last state.
+- A card popped while global is ON comes out collapsed; otherwise its last state.
 
 ## AI summaries
 - Provider: Anthropic API, model Claude Haiku 5.5. API key pasted once into the app's settings, stored outside the code.

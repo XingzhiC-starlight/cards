@@ -4,10 +4,7 @@ import AppKit
 /// and over full-screen apps. It displays one `CardFace` and owns only transient UI state
 /// (hover, editing, a drag in progress); everything else it reports as a `Command`.
 final class CardWindow: NSWindow {
-    /// The card this window shows. An edge switch re-points the window at the incoming card.
-    var cardID: CardID {
-        didSet { cardView.id = cardID }
-    }
+    let cardID: CardID
     private let cardView: CardView
 
     init(id: CardID, send: @escaping (Command) -> Void, slotNear: @escaping (CGPoint) -> Slot) {
@@ -76,14 +73,13 @@ enum CardShape {
 }
 
 /// Root view of a card. It owns the one decision about what a press means, in this order:
-/// 1. an edge band, but only while the stack is non-empty. The bands are the card's margin:
-///    everything else is laid out inside them, so a band click never reaches the text;
-/// 2. a hover button;
-/// 3. the header: a press that moves drags the window, a press that doesn't is a normal text
-///    click (`trackWindowDrag`, called from `CardTextView.mouseDown` and from here when collapsed);
-/// 4. the body: text editing, or "expand this card" when collapsed.
+/// 1. a hover button;
+/// 2. the header or the card's margin: a press that moves drags the window, a press on the header
+///    that doesn't is a normal text click (`trackWindowDrag`, called from `CardTextView.mouseDown`
+///    and from here);
+/// 3. the body: text editing, or "expand this card" when collapsed.
 final class CardView: NSView {
-    var id: CardID
+    let id: CardID
     private let send: (Command) -> Void
     private let slotNear: (CGPoint) -> Slot
     private let editor = CardTextView()
@@ -96,9 +92,6 @@ final class CardView: NSView {
     private let refreshButton = ActionButton(symbol: "arrow.clockwise", help: "Refresh summary")
     private var face: CardFace?
     private var hovering = false
-    private var hoveredEdge: Edge? {
-        didSet { if hoveredEdge != oldValue { needsDisplay = true } }
-    }
     /// Derived from AppKit (key window + editor is first responder), never set from outside.
     private var isEditing = false {
         didSet {
@@ -110,6 +103,8 @@ final class CardView: NSView {
     }
 
     static let formatBarHeight: CGFloat = 24
+    /// The card's margin around its content; pressing in it drags the card.
+    static let margin = NSSize(width: 16, height: 12)
 
     init(id: CardID, send: @escaping (Command) -> Void, slotNear: @escaping (CGPoint) -> Slot) {
         self.id = id
@@ -172,10 +167,11 @@ final class CardView: NSView {
             collapsedHeader.isHidden = !face.collapsed
             summaryView.isHidden = !face.collapsed
             if face.collapsed, window?.firstResponder === editor { window?.makeFirstResponder(nil) }
+            let help = face.collapsed ? "Expand this card" : "Collapse this card"
             clarityButton.image = NSImage(systemSymbolName: face.collapsed ? "rectangle.expand.vertical"
                                                                          : "rectangle.compress.vertical",
-                                          accessibilityDescription: nil)
-            clarityButton.toolTip = face.collapsed ? "Expand this card" : "Collapse this card"
+                                          accessibilityDescription: help)
+            clarityButton.toolTip = help
             needsLayout = true
         }
         let canRefresh: Bool = switch face.summary {
@@ -183,7 +179,6 @@ final class CardView: NSView {
         default: face.collapsed
         }
         refreshButton.isHidden = !canRefresh
-        if !face.canSwitch { hoveredEdge = nil }
         needsDisplay = true
     }
 
@@ -198,9 +193,9 @@ final class CardView: NSView {
 
     // MARK: Layout
 
-    /// The area inside the edge bands. Everything but the bands lives here.
+    /// The area inside the margin. Everything lives here.
     private var content: NSRect {
-        bounds.insetBy(dx: bounds.width * EdgeBands.fraction, dy: bounds.height * EdgeBands.fraction)
+        bounds.insetBy(dx: Self.margin.width, dy: Self.margin.height)
     }
 
     override func layout() {
@@ -227,41 +222,16 @@ final class CardView: NSView {
         let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
         CardShape.fill.setFill()
         shape.fill()
-        if let edge = hoveredEdge {
-            NSGraphicsContext.saveGraphicsState()
-            shape.addClip()
-            NSColor(white: 0, alpha: 0.05).setFill()
-            bandRect(edge).fill()
-            NSGraphicsContext.restoreGraphicsState()
-            let chevron = NSAttributedString(string: edge.direction == .previous ? "‹" : "›", attributes: [
-                .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
-                .foregroundColor: NSColor(white: 0, alpha: 0.4),
-            ])
-            let size = chevron.size()
-            let band = bandRect(edge)
-            chevron.draw(at: NSPoint(x: band.midX - size.width / 2, y: band.midY - size.height / 2))
-        }
         (isEditing ? NSColor.controlAccentColor.withAlphaComponent(0.85) : CardShape.border).setStroke()
         shape.lineWidth = lineWidth
         shape.stroke()
         window?.invalidateShadow()
     }
 
-    private func bandRect(_ edge: Edge) -> NSRect {
-        let bandX = bounds.width * EdgeBands.fraction
-        let bandY = bounds.height * EdgeBands.fraction
-        return switch edge {
-        case .left: NSRect(x: 0, y: 0, width: bandX, height: bounds.height)
-        case .right: NSRect(x: bounds.maxX - bandX, y: 0, width: bandX, height: bounds.height)
-        case .top: NSRect(x: 0, y: bounds.maxY - bandY, width: bounds.width, height: bandY)
-        case .bottom: NSRect(x: 0, y: 0, width: bounds.width, height: bandY)
-        }
-    }
-
     // MARK: Mouse
 
-    /// The first click on an inactive card already acts (places the caret, drags, switches),
-    /// as well as activating the app.
+    /// The first click on an inactive card already acts (places the caret, drags), as well as
+    /// activating the app.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -273,10 +243,6 @@ final class CardView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if let edge = edge(at: point) {
-            send(.switchCard(id, edge.direction))
-            return
-        }
         if face?.collapsed == true, content.contains(point), point.y < collapsedHeader.frame.minY {
             send(.setCollapsed(id, false))      // collapsed body: expand just this card
             return
@@ -293,7 +259,6 @@ final class CardView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        hoveredEdge = edge(at: convert(event.locationInWindow, from: nil))
         if !hovering { setHovering(true) }
     }
 
@@ -302,7 +267,6 @@ final class CardView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        hoveredEdge = nil
         setHovering(false)
     }
 
@@ -312,12 +276,6 @@ final class CardView: NSView {
             context.duration = 0.15
             hoverButtons.animator().alphaValue = on ? 1 : 0
         }
-    }
-
-    /// Bands exist only while the stack is non-empty; otherwise every point is header or body.
-    private func edge(at point: CGPoint) -> Edge? {
-        guard face?.canSwitch == true, !content.contains(point) else { return nil }
-        return EdgeBands.edge(at: point, in: bounds)
     }
 
     /// Header press: drag and snap if the pointer moves; report a plain click otherwise.

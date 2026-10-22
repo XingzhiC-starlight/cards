@@ -36,8 +36,6 @@ final class DeskController {
     func send(_ command: Command) {
         let arrived = desk.apply(command)
         switch command {
-        case .switchCard(let outgoing, _):
-            if let arrived { repointWindow(from: outgoing, to: arrived) }
         case .new, .pop:
             if arrived == nil, desk.firstFreeSlot == nil { NSSound.beep() }   // "Desktop full"
         default:
@@ -130,14 +128,6 @@ final class DeskController {
                                 slotNear: { [unowned self] in self.grid.nearestSlot(to: $0) })
         cardWindows[id] = window
         return window
-    }
-
-    /// Edge switch: the same window now shows the incoming card, so nothing flickers and the
-    /// window keeps keyboard focus.
-    private func repointWindow(from outgoing: CardID, to incoming: CardID) {
-        guard let window = cardWindows.removeValue(forKey: outgoing) else { return }
-        window.cardID = incoming
-        cardWindows[incoming] = window
     }
 
     /// macOS brings forward only the clicked window when an app activates. Cards are one group,
