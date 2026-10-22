@@ -44,6 +44,12 @@ final class CardWindow: NSWindow {
         makeKeyAndOrderFront(nil)
         cardView.focusEditor()
     }
+
+    /// The pointer moved; `location` is in screen coordinates. The hover buttons show while it is
+    /// over this card.
+    func pointerMoved(to location: NSPoint) {
+        cardView.setHovering(isVisible && frame.contains(location))
+    }
 }
 
 /// The window settings cards and the stack share: borderless, transparent corners, normal level,
@@ -160,7 +166,7 @@ final class CardView: NSView {
         let previous = self.face
         self.face = face
         editor.show(face.note)
-        collapsedHeader.stringValue = face.note.header.isEmpty ? "Untitled" : face.note.header
+        collapsedHeader.stringValue = face.note.title
         summaryView.show(face.summary)
         if previous?.collapsed != face.collapsed {
             scrollView.isHidden = face.collapsed
@@ -250,27 +256,8 @@ final class CardView: NSView {
         _ = dragIfMoved(event)                  // collapsed header or the margin: drag
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        for area in trackingAreas { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(rect: .zero,
-                                       options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self))
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        if !hovering { setHovering(true) }
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        setHovering(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        setHovering(false)
-    }
-
-    private func setHovering(_ on: Bool) {
+    func setHovering(_ on: Bool) {
+        guard on != hovering else { return }
         hovering = on
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.15

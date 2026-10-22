@@ -49,7 +49,7 @@ func send(_ command: Command) {
 - **Location is ownership.** A `Card` value lives inside its location: a slot entry or a stack
   position. There is no id-to-card map to keep in step,
   so "one card, one place" holds by construction, and a moving card carries its collapsed state
-  and summary with it. The stack's bottom-right cell is not a `Slot`, so no card can land on it.
+  and summary with it. The stack's top-left cell is not a `Slot`, so no card can land on it.
 - **Edge bands flip the stack.** Only the stack window has edge bands. Next sends the top card
   to the bottom, previous brings the bottom card back up: a loop, each undoing the other, so every
   card hidden under the stack can be shown. Pop takes whichever card is on top.
@@ -77,9 +77,15 @@ owner behaving as worded, and the judge agreed independently.
 - Grafted from Sonnet: the list typing rules are pure functions (`Typing` in `Note.swift`), and
   only cards on the desktop request summaries, so a large stack does not fire a burst of requests.
 
-Later change: edge bands moved from popped cards to the stack window, to show the cards hidden
-under the stack. Each popped card's stack cursor and the window re-pointing graft went with them;
-the stack itself is now the loop.
+Later changes, after trying the app:
+
+- Edge bands moved from popped cards to the stack window, to show the cards hidden under the
+  stack. Each popped card's stack cursor and the window re-pointing graft went with them; the
+  stack itself is now the loop.
+- The stack moved to the top-left cell and looks like one card: a sky-blue ribbon (the control
+  center) above the selected card, with no list of the cards underneath.
+- Hover follows the pointer's real position (one mouse-move monitor in `DeskController`) instead
+  of per-view enter/exit events, which a fast pointer can skip.
 
 ## Tradeoffs accepted
 

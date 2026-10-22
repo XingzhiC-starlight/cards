@@ -11,12 +11,12 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 
 ## Grid and sizing
 - Screen is an invisible 5 × 4 grid. Card width = screen width / 5; height = (screen height below menu bar) / 4.
-- 20 slots: 19 for cards, 1 (bottom-right) for the stack.
+- 20 slots: 19 for cards, 1 (top-left) for the stack.
 - Recomputed when the display setup changes; cards re-snap to their slots.
 
 ## Stack
-- Its own card-sized window in the bottom-right slot.
-- Shows: a preview of the top card (its header and first lines), count badge, scrollable list of all stacked headers (click one to pop that card).
+- Its own card-sized window in the top-left slot: the control center, marked by a sky-blue ribbon on top.
+- Looks like one card: the ribbon holds the toolbar and a count badge; below it, the selected stacked card (header and body). No list or divider for the cards underneath.
 - Toolbar: New, Pop, Clarity on/off (global).
 
 ## Pop / return / find space
@@ -28,8 +28,8 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 ## Edge switching (stack only; revised 2026-10-21)
 - Only the stack window has edge bands: an invisible band = 5% of its width/height along all four edges. Popped cards have none.
 - Purpose: show the cards hidden under the stack.
-- Right/bottom band click → the top card goes to the bottom and the next one shows. Left/top → the bottom card comes back to the top. A loop.
-- Pop takes whichever card is showing on top.
+- Select a card with the bands, then operate on it: right/bottom band click → the selected card goes to the bottom and the next one shows; left/top → the bottom card comes back up. A loop.
+- Pop takes the selected card.
 - On hover the band tints faintly and shows ‹ or ›. Fewer than two stacked cards → bands do nothing.
 
 ## Card content and editing

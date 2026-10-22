@@ -97,7 +97,7 @@ enum Command {
 ///
 /// Invariants, all kept by construction in this file:
 /// - every card is in exactly one place (one slot cell or one stack position);
-/// - `slots.count == Slot.count`, so the stack's bottom-right cell can never hold a card.
+/// - `slots.count == Slot.count`, so the stack's top-left cell can never hold a card.
 struct Desk: Equatable {
     /// Indexed by `Slot.index`.
     private(set) var slots: [Card?]
@@ -297,22 +297,14 @@ enum SummaryFace: Equatable {
 }
 
 struct StackFace: Equatable {
-    /// Top first.
-    let entries: [StackEntry]
+    let count: Int
+    /// The selected (top) stacked card's content, shown on the stack.
+    let topNote: Note?
     let clarity: Bool
     /// Derived from `firstFreeSlot`, so there is no "full" flag to set or clear.
     let desktopFull: Bool
-    /// The top card's content, previewed in the stack window.
-    let topNote: Note?
-    var top: StackEntry? { entries.first }
-    var count: Int { entries.count }
-    /// The edge bands flip the stack only when there is something under the top card.
+    /// The edge bands select another card only when there is more than one.
     var canFlip: Bool { count > 1 }
-}
-
-struct StackEntry: Equatable {
-    let id: CardID
-    let title: String
 }
 
 extension Desk {
@@ -325,8 +317,7 @@ extension Desk {
     }
 
     var stackFace: StackFace {
-        StackFace(entries: stack.map { StackEntry(id: $0.id, title: $0.note.title) },
-                  clarity: clarity, desktopFull: firstFreeSlot == nil, topNote: stack.first?.note)
+        StackFace(count: stack.count, topNote: stack.first?.note, clarity: clarity, desktopFull: firstFreeSlot == nil)
     }
 
     /// The whole summary lifecycle as seen by the UI, from two facts: the card's latest attempt

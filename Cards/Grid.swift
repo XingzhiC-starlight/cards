@@ -3,7 +3,7 @@ import AppKit
 // Screen geometry as pure functions: slots, frames, nearest-slot snapping, edge bands.
 
 /// One of the 19 card cells of the invisible 5 × 4 grid, numbered in pop order
-/// (left → right, top → bottom). The bottom-right cell belongs to the stack and is not a `Slot`,
+/// (left → right, top → bottom). The top-left cell belongs to the stack and is not a `Slot`,
 /// so no transition can ever put a card there.
 struct Slot: Hashable, Comparable {
     static let columns = 5
@@ -12,12 +12,14 @@ struct Slot: Hashable, Comparable {
     /// Every slot in pop order; `Desk.firstFreeSlot` takes the first free one.
     static let all: [Slot] = (0..<count).map { Slot(unchecked: $0) }
 
-    /// 0..<19 in reading order.
+    /// 0..<19 in reading order, skipping the stack's cell.
     let index: Int
-    var column: Int { index % Slot.columns }
-    var row: Int { index / Slot.columns }
+    /// The grid cell, 1..<20 in reading order; cell 0 is the stack's.
+    private var cell: Int { index + 1 }
+    var column: Int { cell % Slot.columns }
+    var row: Int { cell / Slot.columns }
 
-    /// Boundary initializer for sidecar data: nil outside 0..<19 (19 would be the stack's cell).
+    /// Boundary initializer for sidecar data: nil outside 0..<19.
     init?(index: Int) {
         guard (0..<Slot.count).contains(index) else { return nil }
         self.index = index
@@ -47,7 +49,8 @@ struct Grid: Equatable {
 
     func frame(of slot: Slot) -> CGRect { cell(column: slot.column, row: slot.row) }
 
-    var stackFrame: CGRect { cell(column: Slot.columns - 1, row: Slot.rows - 1) }
+    /// The stack lives in the top-left cell.
+    var stackFrame: CGRect { cell(column: 0, row: 0) }
 
     /// The slot whose center is nearest `point` (a dropped card's center). Never the stack cell,
     /// because the stack cell is not a `Slot`.

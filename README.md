@@ -1,7 +1,7 @@
 # Cards
 
 A macOS prototype where every note is its own small window, laid out on an invisible 5 × 4 grid,
-with a stack of the rest in the bottom-right corner. Native Swift and AppKit, no dependencies.
+with a stack of the rest in the top-left corner. Native Swift and AppKit, no dependencies.
 The behaviour is specified in [CARDS-SPEC.md](CARDS-SPEC.md); how the code is put together is in
 [DESIGN.md](DESIGN.md).
 
@@ -49,9 +49,9 @@ against another folder, pass `-CardsFolder /path/to/folder` as a launch argument
 | To | Do |
 | --- | --- |
 | Make a card | **New** on the stack |
-| Bring a card out | **Pop**, or click its title in the stack's list |
+| Select a stacked card | Click the thin band along the stack's edge: right/bottom = next, left/top = previous |
+| Bring a card out | Select it, then click **Pop** in the stack's blue ribbon |
 | Move a card | Drag it by its title; it snaps to the nearest cell and swaps with whatever is there |
-| See the cards under the stack | Click the thin band along the stack's edge: right/bottom = next, left/top = previous; Pop takes the one showing |
 | Put a card back | Hover it and click **↩ Stack** |
 | Collapse to a summary | Hover a card and click the collapse button, or use **Clarity** on the stack for every card |
 | Format | ⌘B, ⌘I, or start a line with `- `, `1. ` or `[] `; the bar at the bottom of the card has the same five actions |

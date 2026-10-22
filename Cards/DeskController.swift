@@ -21,6 +21,7 @@ final class DeskController {
     private let library: Library
     private let keys: KeyStore
     private var pendingSave: Task<Void, Never>?
+    private var pointerMonitors: [Any] = []
 
     init(library: Library, keys: KeyStore) {
         self.library = library
@@ -29,6 +30,7 @@ final class DeskController {
         grid = Self.currentGrid() ?? Grid(area: CGRect(x: 0, y: 0, width: 1512, height: 949))
         summarizer.sync(desk.poppedCards, typing: nil)
         render()
+        trackPointer()
     }
 
     // MARK: The one way state changes
@@ -138,6 +140,28 @@ final class DeskController {
         stackWindow.orderFront(nil)
         for window in cardWindows.values { window.orderFront(nil) }
         NSApp.keyWindow?.orderFront(nil)
+    }
+
+    /// Hover follows the pointer's real position, not per-view enter/exit events: a fast pointer
+    /// can skip a window's exit event, which would leave its hover buttons showing. A global
+    /// monitor sees moves while another app is active, a local one while Cards is; watching the
+    /// mouse needs no special permission.
+    private func trackPointer() {
+        let moved: (NSEvent) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.pointerMoved() }
+        }
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved, handler: moved) {
+            pointerMonitors.append(monitor)
+        }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved, handler: { moved($0); return $0 }) {
+            pointerMonitors.append(monitor)
+        }
+    }
+
+    private func pointerMoved() {
+        let location = NSEvent.mouseLocation
+        for window in cardWindows.values { window.pointerMoved(to: location) }
+        stackWindow.pointerMoved(to: location)
     }
 
     private func scheduleSave() {
