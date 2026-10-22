@@ -130,7 +130,7 @@ private final class StackView: NSView {
     init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu, toggleHidden: @escaping () -> Void) {
         self.send = send
         cardView = CardView(home: .stack, send: send)
-        clarityButton = ActionButton(title: "Clarity: Off", help: "Collapse or expand every card") { send(.toggleClarity) }
+        clarityButton = ActionButton(title: "Clarity", help: "") { send(.toggleClarity) }
         toggleButton = ActionButton(symbol: "eye", help: "Hide all") { toggleHidden() }
         super.init(frame: .zero)
 
@@ -188,8 +188,10 @@ private final class StackView: NSView {
         cardView.apply(face.selected, desktopFull: face.desktopFull)
         badge.stringValue = "\(face.count)"
         fullLabel.isHidden = !face.desktopFull
-        clarityButton.title = face.clarity ? "Clarity: On" : "Clarity: Off"
-        clarityButton.contentTintColor = face.clarity ? Palette.accent : Palette.ribbonInk
+        clarityButton.contentTintColor = face.clarity ? Palette.accent : Palette.inkSoft
+        clarityButton.toolTip = face.clarity ? "Clarity is on: click to expand every card"
+                                             : "Clarity is off: click to collapse every card"
+        clarityButton.setAccessibilityValue(face.clarity ? "on" : "off")
         needsLayout = true
         needsDisplay = true
     }

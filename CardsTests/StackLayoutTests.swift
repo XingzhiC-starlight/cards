@@ -31,23 +31,35 @@ final class StackLayoutTests: XCTestCase {
         return row?.arrangedSubviews.compactMap { $0 as? NSButton }.first { $0.title == title }
     }
 
-    private func stack(width: CGFloat, _ visibility: Visibility = .all, full: Bool = false) -> Stack {
+    private func stack(width: CGFloat, _ visibility: Visibility = .all, full: Bool = false,
+                       clarity: Bool = false) -> Stack {
         var toggles = 0
         var commands: [Command] = []
         let window = StackWindow(send: { commands.append($0) }, menu: { NSMenu() }, toggleHidden: { toggles += 1 },
                                  drag: WindowDrag(moved: { _ in }, dropped: { _ in }))
         let card = CardFace(id: CardID(rawValue: "a"), note: Note(header: "Title", body: []), collapsed: false,
                             summary: .body(""))
-        let face = StackFace(count: 12, selected: card, clarity: false, desktopFull: full)
+        let face = StackFace(count: 12, selected: card, clarity: clarity, desktopFull: full)
         window.apply(face, cell: CGRect(x: 0, y: 0, width: width, height: (width * 0.78).rounded()), visibility: visibility)
         window.contentView!.layoutSubtreeIfNeeded()
         return Stack(window: window, toggled: { toggles }, sent: { commands })
     }
 
     func testTheRibbonHasNewAndClarityButNoPop() {
-        let titles = stack(width: wide).ribbonButtons.map(\.title)
-        XCTAssertEqual(titles.count, 2)
-        XCTAssertFalse(titles.contains("Pop"), "Pop is on the stacked card now")
+        XCTAssertEqual(stack(width: wide).ribbonButtons.map(\.title), ["New", "Clarity"])
+    }
+
+    func testClaritySaysItsStateByColorAndValueWhileTheLabelStaysPut() throws {
+        let off = try XCTUnwrap(stack(width: wide).ribbonButtons.last)
+        let on = try XCTUnwrap(stack(width: wide, clarity: true).ribbonButtons.last)
+        XCTAssertEqual([off.title, on.title], ["Clarity", "Clarity"])
+        XCTAssertEqual(off.font, on.font, "same weight both ways")
+        XCTAssertEqual(off.contentTintColor, Palette.inkSoft)
+        XCTAssertEqual(on.contentTintColor, Palette.accent)
+        XCTAssertEqual(off.accessibilityValue() as? String, "off")
+        XCTAssertEqual(on.accessibilityValue() as? String, "on")
+        XCTAssertEqual(off.toolTip, "Clarity is off: click to collapse every card")
+        XCTAssertEqual(on.toolTip, "Clarity is on: click to expand every card")
     }
 
     func testTheStackedCardPopsItselfAndADesktopCardReturnsToTheStack() throws {
