@@ -12,9 +12,9 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 ## Hide all (revised 2026-10-22)
 - Hide all (menu bar icon, the stack ribbon's button, or ⌥⌘C) hides every popped card, free ones included, and shrinks the stack to just its tan ribbon, at the top of wherever the stack is. The ribbon never hides.
 - The ribbon's button is a one-click toggle, the same as ⌥⌘C: the icon shows the current state, a plain eye (tooltip "Hide all") while cards are shown, an eye with a slash ("Show all") while they are hidden (revised 2026-10-22). It sits left of the menu button.
-- While hidden, the ribbon keeps New, Pop, Clarity, the toggle and the menu button, plus the count badge, which moves into the ribbon beside the toggle because the card area is gone (on a very narrow stack the badge is dropped before it would cover the toolbar). The ribbon can still be dragged.
+- While hidden, the ribbon keeps New, Clarity, the toggle and the menu button, plus the count badge, which moves into the ribbon beside the toggle because the card area is gone (on a very narrow stack the badge is dropped before it would cover the toolbar). The ribbon can still be dragged. There is no Pop while hidden: its button is on the stacked card, which is gone too (revised 2026-10-22).
 - Show all (the toggle or the menu bar icon), ⌥⌘C, or opening the app again (Spotlight, Finder, Launchpad) while it runs brings back the stack's card area and every popped card, and brings the app forward.
-- New or Pop while hidden shows only that card; the rest stay hidden. Its slot is chosen as if the hidden cards were in place, free ones included.
+- New while hidden shows only that card; the rest stay hidden. Its slot is chosen as if the hidden cards were in place, free ones included (revised 2026-10-22: Pop is no longer here).
 - Hidden is not persisted: every launch starts with everything shown.
 
 ## Grid and sizing
@@ -26,16 +26,16 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Its own card-sized window, top-right until you move it (revised 2026-10-22): the control center, marked by a tan ribbon on top.
 - Moved like a card (see Moving cards and the stack), by pressing the ribbon's empty space and dragging. A click there that does not move still acts as the edge band under it.
 - Looks like one card: the ribbon holds the toolbar, "Desktop full" when it applies, the Hide all / Show all toggle and the menu button; below it, the selected stacked card (header and body). No list or divider for the cards underneath. The count badge sits in the bottom-right corner of the card area, clear of the card's hover buttons and its formatting bar (revised 2026-10-22).
-- Toolbar: New, Pop, Clarity on/off (global). To its right come "Desktop full" (it truncates before any button moves), the Hide all / Show all toggle (see Hide all) and a menu button with Settings… / Quit, so the control center works even when the menu bar icon is hidden (revised 2026-10-22).
-- The selected stacked card is a full card (revised 2026-10-22): edited in place exactly like a popped card (see Card content and editing), with the same per-card buttons except ↩ Stack, and collapsible to its summary (see Clarity mode).
+- Toolbar: New, Clarity on/off (global). Clarity always reads "Clarity" and shows its state by text color alone: soft brown when off, the accent color when on. Its tooltip and accessibility value also say on or off (revised 2026-10-22). To its right come "Desktop full" (it truncates before any button moves), the Hide all / Show all toggle (see Hide all) and a menu button with Settings… / Quit, so the control center works even when the menu bar icon is hidden (revised 2026-10-22).
+- The selected stacked card is a full card (revised 2026-10-22): edited in place exactly like a popped card (see Card content and editing), with every per-card button a popped card has, and ↗ Pop where a popped card has ↩ Stack (Pop moved here from the ribbon, revised 2026-10-22), and collapsible to its summary (see Clarity mode).
 - Deleting the selected card shows the one underneath.
 - At launch the stack shows its top card, or the blank page when the stack is empty.
 - The count badge counts real cards only, never the blank page.
 
 ## Pop / return / find space
-- Pop takes the first grid slot (left→right, top→bottom) not taken by a card or the stack. A snapped card or stack takes its slot; a free one takes the slot it covers most. Other apps' windows are ignored.
-- No slot left, or 19 cards already on the desktop → Pop refuses and the stack shows "Desktop full".
-- Pop is disabled while the blank page shows.
+- Pop, the ↗ Pop button on the stacked card (revised 2026-10-22), takes the first grid slot (left→right, top→bottom) not taken by a card or the stack. A snapped card or stack takes its slot; a free one takes the slot it covers most. Other apps' windows are ignored.
+- No slot left, or 19 cards already on the desktop → Pop refuses and the stack shows "Desktop full". The ↗ Pop button is greyed and its tooltip reads "Desktop full" (revised 2026-10-22).
+- There is no Pop on the blank page, which has no per-card buttons, nor while Hide all has removed the card area (revised 2026-10-22).
 - Popping the card being edited on the stack moves the cursor with it; the stack then shows the next card.
 - "↩ Stack" button returns a card to the top of the stack. It forgets where the card was; a later Pop takes the first free slot.
 
@@ -57,7 +57,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Two-finger horizontal swipe on the stack: one card per swipe, next or previous following the system scroll direction. Vertical scroll scrolls the selected card's text.
 - Edge bands stay as a click alternative: an invisible band = 5% of the stack's width/height along all four edges. Right/bottom = next, left/top = previous. On hover the band tints faintly and shows ‹ or ›. Popped cards have no bands.
 - Because of the blank page, swiping and the bands work with any number of stacked cards, including zero or one.
-- Pop takes the selected card.
+- ↗ Pop takes the selected card.
 
 ## Blank page (new 2026-10-22)
 - Typing its first character turns it into a real card in the same place in the loop (the bottom of the stack). The card stays selected with the cursor in it, and a new blank page appears right after it.
@@ -71,7 +71,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Apply via ⌘B / ⌘I; typing `- `, `1. `, `[] ` starts lists; Enter continues a list, Enter on an empty item ends it.
 - A five-button formatting bar appears along the bottom of a card only while editing.
 - Scroll wheel/trackpad scrolls whichever card the pointer is over. The card being edited has a stronger border.
-- Per-card buttons (clarity toggle, summary refresh, ↩ Stack, trash) fade in on hover only. Trash asks "Delete this card?". The stacked card has all of them except ↩ Stack.
+- Per-card buttons (clarity toggle, summary refresh, ↩ Stack, trash) fade in on hover only. Trash asks "Delete this card?". The stacked card has every one of them, with ↗ Pop where a popped card has ↩ Stack (revised 2026-10-22).
 - New: creates a blank card and pops it straight out, cursor on the header line, always expanded. Desktop full → New shows the stack's blank page instead.
 
 ## Clarity mode

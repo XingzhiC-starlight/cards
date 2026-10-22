@@ -32,7 +32,7 @@ Preconditions:
   `cv ax text stack` prints the Beta card and the badge reads 1.
 - **File gone.** Wait 1.5 s and run `cv files delete-stacked`. The folder has `seed-b.md` but no
   `seed-a.md`, and the sidecar's `stack` is `["seed-b"]`.
-- **Delete popped.** Run `cv ax press Pop`, then `cv ax press "Delete this card" card=Beta` and
+- **Delete popped.** Run `cv ax press "↗ Pop" stack`, then `cv ax press "Delete this card" card=Beta` and
   `cv ax press Delete card=Beta`. `cv ax windows` lists only the stack, the stack shows the blank
   page, and after 1.5 s `cv files delete-popped` shows no `.md` files and empty `placements` and
   `stack`.
