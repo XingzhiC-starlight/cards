@@ -11,8 +11,7 @@ final class CardWindow: NSWindow {
         cardID = id
         cardView = CardView(home: .desktop(drag), send: send)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
-        configureAsCard(self)
-        contentView = cardView
+        configureAsCard(self, content: cardView)
     }
 
     /// Borderless windows refuse key status by default; a card must take keyboard focus.
@@ -54,8 +53,9 @@ final class CardWindow: NSWindow {
 }
 
 /// The window settings cards and the stack share: borderless, transparent corners, normal level,
-/// on every Space and over full-screen apps, always the light look.
-func configureAsCard(_ window: NSWindow) {
+/// on every Space and over full-screen apps, always the light look. `content` goes on frosted
+/// glass cut to the card shape; it draws the tint and edges over it (`CardShape.fillGlass`).
+func configureAsCard(_ window: NSWindow, content: NSView) {
     window.isReleasedWhenClosed = false
     window.isOpaque = false
     window.backgroundColor = .clear
@@ -64,16 +64,76 @@ func configureAsCard(_ window: NSWindow) {
     window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     window.acceptsMouseMovedEvents = true
     window.appearance = NSAppearance(named: .aqua)   // "neutral light cards", also in Dark Mode
+    let glass = NSVisualEffectView()
+    glass.material = Palette.glassMaterial
+    glass.blendingMode = .behindWindow
+    glass.state = .active   // Cards is rarely the active app; inactive glass would go flat
+    glass.maskImage = CardShape.maskImage
+    content.frame = glass.bounds
+    content.autoresizingMask = [.width, .height]
+    glass.addSubview(content)
+    window.contentView = glass
 }
 
 /// Card geometry shared by the card and the stack: the gap between neighbours and the corner radius.
 enum CardShape {
     static let gap: CGFloat = 3
-    static let radius: CGFloat = 9
+    static let radius: CGFloat = 10
 
     static func path(in bounds: NSRect, lineWidth: CGFloat) -> NSBezierPath {
         let rect = bounds.insetBy(dx: gap + lineWidth / 2, dy: gap + lineWidth / 2)
         return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+    }
+
+    /// The glass's cut-out: the card shape, stretched from its middle pixel so the corners stay round.
+    static let maskImage: NSImage = {
+        let edge = gap + radius + 1
+        let image = NSImage(size: NSSize(width: edge * 2 + 1, height: edge * 2 + 1), flipped: false) { rect in
+            NSColor.black.setFill()
+            path(in: rect, lineWidth: 1).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: edge, left: edge, bottom: edge, right: edge)
+        image.resizingMode = .stretch
+        return image
+    }()
+
+    /// The glass surface up to its sheen: the tint, the tinted `ribbon` strip if any, and the
+    /// light at the top edge. A caller with more to lay between this and the edge (`strokeEdge`)
+    /// does so after.
+    static func fillGlass(in bounds: NSRect, lineWidth: CGFloat, ribbon: NSRect? = nil) {
+        NSGraphicsContext.saveGraphicsState()
+        path(in: bounds, lineWidth: lineWidth).addClip()
+        Palette.paper.setFill()
+        bounds.fill()
+        if let ribbon {
+            Palette.ribbon.setFill()
+            ribbon.fill()
+        }
+        NSGradient(colors: [Palette.sheen.withAlphaComponent(0.10), Palette.sheen.withAlphaComponent(0)])?
+            .draw(in: NSRect(x: bounds.minX, y: bounds.midY, width: bounds.width, height: bounds.height / 2), angle: 90)
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// The bright rim inside the outline, then the outline: the editing border while `editing`.
+    static func strokeEdge(in bounds: NSRect, lineWidth: CGFloat, editing: Bool) {
+        let shape = path(in: bounds, lineWidth: lineWidth)
+        (editing ? Palette.focus : Palette.line).setStroke()
+        shape.lineWidth = lineWidth
+        shape.stroke()
+
+        // Clipped to inside the inner path, so only the inner half of the 2.4pt stroke shows.
+        let inner = NSBezierPath(roundedRect: shape.bounds.insetBy(dx: 1, dy: 1), xRadius: radius - 1, yRadius: radius - 1)
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        NSGraphicsContext.saveGraphicsState()
+        inner.setClip()
+        context.addPath(inner.cgPath)
+        context.setLineWidth(2.4)
+        context.replacePathWithStrokedPath()
+        context.clip()
+        NSGradient(colors: [Palette.rim.withAlphaComponent(0.55), Palette.rim.withAlphaComponent(0.05),
+                            Palette.rim.withAlphaComponent(0.22)])?.draw(in: bounds, angle: -60)
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
@@ -277,12 +337,8 @@ final class CardView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard case .desktop = home else { return }
         let lineWidth: CGFloat = isEditing ? 2 : 1
-        let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
-        Palette.paper.setFill()
-        shape.fill()
-        (isEditing ? Palette.accent.withAlphaComponent(0.85) : Palette.line).setStroke()
-        shape.lineWidth = lineWidth
-        shape.stroke()
+        CardShape.fillGlass(in: bounds, lineWidth: lineWidth)
+        CardShape.strokeEdge(in: bounds, lineWidth: lineWidth, editing: isEditing)
         window?.invalidateShadow()
     }
 

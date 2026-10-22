@@ -94,7 +94,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - One hidden sidecar file for positions (each card's and the stack's slot or free spot), stack order, collapsed state, and cached summaries.
 
 ## Look
-- Warm beige cards (revised 2026-10-22, see DESIGN.md), thin border, soft shadow, system font. Per-card colors later.
+- Warm beige frosted-glass cards (revised 2026-10-22, see DESIGN.md), thin border, soft shadow, system font. Per-card colors later.
 
 ## Explicitly out of scope for the prototype
 - Always-on-top mode, drag-to-stack, fonts/colors/sizes/tables/images/links, multiple stacks, sync, sharing.

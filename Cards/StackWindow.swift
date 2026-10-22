@@ -15,8 +15,7 @@ final class StackWindow: NSWindow {
         self.send = send
         stackView = StackView(send: send, menu: menu, toggleHidden: toggleHidden)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
-        configureAsCard(self)
-        contentView = stackView
+        configureAsCard(self, content: stackView)
         // A drag always reports the whole card, whose top edge is the ribbon's.
         stackView.onRibbonPress = { [unowned self] event in
             func card(_ frame: CGRect) -> CGRect {
@@ -266,19 +265,13 @@ private final class StackView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let lineWidth: CGFloat = cardEditing ? 2 : 1
-        let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
-        Palette.paper.setFill()
-        shape.fill()
-        NSGraphicsContext.saveGraphicsState()
-        shape.addClip()
-        Palette.ribbon.setFill()
-        ribbonRect.fill()
+        CardShape.fillGlass(in: bounds, lineWidth: lineWidth, ribbon: ribbonRect)
         if let edge = hoveredEdge {
+            NSGraphicsContext.saveGraphicsState()
+            CardShape.path(in: bounds, lineWidth: lineWidth).addClip()
             Palette.shade.setFill()
             EdgeBands.rect(of: edge, in: bounds).fill()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-        if let edge = hoveredEdge {
+            NSGraphicsContext.restoreGraphicsState()
             let band = EdgeBands.rect(of: edge, in: bounds)
             let chevron = NSAttributedString(string: edge.direction == .previous ? "‹" : "›", attributes: [
                 .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
@@ -287,9 +280,7 @@ private final class StackView: NSView {
             let size = chevron.size()
             chevron.draw(at: NSPoint(x: band.midX - size.width / 2, y: band.midY - size.height / 2))
         }
-        (cardEditing ? Palette.accent.withAlphaComponent(0.85) : Palette.line).setStroke()
-        shape.lineWidth = lineWidth
-        shape.stroke()
+        CardShape.strokeEdge(in: bounds, lineWidth: lineWidth, editing: cardEditing)
         window?.invalidateShadow()
     }
 

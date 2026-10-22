@@ -11,7 +11,7 @@ final class StackLayoutTests: XCTestCase {
         let window: StackWindow
         let toggled: () -> Int
 
-        var view: NSView { window.contentView! }
+        var view: NSView { window.contentView!.subviews[0] }   // the glass holds the stack view
         func control(_ tooltip: String) -> NSView {
             view.subviews.first { $0.toolTip == tooltip }!
         }

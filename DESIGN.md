@@ -47,7 +47,7 @@ func send(_ command: Command) {
 | `CardWindow.swift`, `CardEditor.swift` | the card window, press routing, and the text view |
 | `StackWindow.swift`, `Swipe.swift` | the stack window; the rules that turn scroll events into flips (pure) |
 | `Settings.swift`, `App.swift` | API key and settings; entry point, menu bar, hotkey, reopen |
-| `Palette.swift` | every color the app draws, as named tokens (see Color) |
+| `Palette.swift` | every color the app draws, and the glass material, as named tokens (see Color and glass) |
 
 - **Location is ownership.** A `Card` value lives inside its location: a desktop entry (with its
   `Place`) or a stack position. There is no id-to-card map to keep in step,
@@ -90,45 +90,62 @@ func send(_ command: Command) {
 - **Summaries.** A summary records the fingerprint of the note it describes; it is fresh only
   while that matches. Spinner, failure and "no key" are derived, not stored as flags.
 
-## Color
+## Color and glass
 
 Cards sit beside windows that are mostly white: editors, terminals, Codex, Claude Code. A white
 card with a sky-blue ribbon read as one more of them. The palette is warm paper instead: every
-card is beige, and the stack's ribbon is the same hue made darker, so the control center reads as
-part of the card it sits on. All values are sRGB, live in `Palette` (`Palette.swift`), and nowhere
+card is beige, and the stack's ribbon is the same hue one step darker, so the control center
+reads as part of the card it sits on. All values are sRGB, live in `Palette` (`Palette.swift`), and nowhere
 else; a view never writes a color literal. Cards always use the light look, in Dark Mode too, so
 there is one set of values.
 
-| Token | Hex | Used for |
+The paper is frosted glass. `configureAsCard(_:content:)` puts every card and the stack on an
+`NSVisualEffectView` (`Palette.glassMaterial`, blurring what is behind the window), cut to
+`CardShape` by a mask image. `CardShape.fillGlass` lays the translucent tint, the ribbon and a
+white sheen at the top; `CardShape.strokeEdge` draws the outline and a white specular rim just
+inside it. The glass stays `.active`, because Cards is rarely the active app and inactive glass
+turns flat gray. Of three prototypes (frosted paper, clear glass, beige glass), frosted paper was
+chosen: it stays beige over white windows and only hints at what is behind.
+
+| Token | Value | Used for |
 | --- | --- | --- |
-| `paper` | `#F4ECDE` | card and stack fill |
-| `ribbon` | `#D8C5A2` | the stack's ribbon; at 55 % under the count badge on the card |
+| `paper` | `#F4ECDE` at 78 % | the glass tint of the card body |
+| `ribbon` | `#E6D8BC` at 85 % | the stack's ribbon; at 55 % under the count badge on the card |
+| `glassMaterial` | `.popover` | the blur behind every card |
+| `sheen` | white, 10 % to 0 | the top half of a card, fading down |
+| `rim` | white, 55 % / 5 % / 22 % | a 1.2 pt edge inside the outline, brightest top-left |
 | `ink` | `#2B2520` | card text, the caret |
 | `inkSoft` | `#716453` | list markers, summaries, card buttons, edge-band chevrons |
 | `inkFaint` | `#B3A68F` | the empty card's "Title" placeholder |
 | `ribbonInk` | `#46361F` | ribbon buttons and the count badge |
-| `line` | `#5A4630` at 24 % | card and stack border |
+| `line` | `#5A4630` at 18 % | card and stack outline |
 | `shade` | `#5A4630` at 7 % | a hovered edge band |
 | `guide` | `#5A4630` at 45 % | the dashed slot guide |
-| `accent` | `#823F1D` | the editing border, a guide that will snap, Clarity: On |
+| `focus` | `#DDB880` | the 2 pt border of the card you are typing in |
+| `accent` | `#823F1D` | a guide that will snap, Clarity: On |
 | `danger` | `#9A2818` | "Desktop full" |
 | `highlight` | `#E8D5AE` | selected text |
 
+`CardShape.radius` is 10 points.
+
 Rules the values keep:
 
-- One hue family. `paper`, `ribbon` and the inks are hue 34 to 39°; only `accent` (20°) and
-  `danger` (7°) step out, and only to mark a state.
-- Text contrast (WCAG): `ink` on `paper` 12.9:1, `inkSoft` on `paper` 4.9:1, `ribbonInk` on
-  `ribbon` 6.9:1, `accent` on `ribbon` 4.6:1, `danger` on `ribbon` 4.6:1. Body text and every
-  ribbon label stay at 4.5:1 or more; only the placeholder (2.0:1) is meant to be faint.
-- `ribbon` against `paper` is 1.44:1: a visible band, not a separate color.
+- One hue family. `paper`, `ribbon`, `focus` and the inks are hue 34 to 39°; only `accent`
+  (20°) and `danger` (7°) step out, and only to mark a state.
+- Contrast is measured on the rendered glass, since the tint is translucent. Over a white window
+  the body renders `#F0ECE4` and the ribbon `#EAE2CF` (sampled from screenshots). On those:
+  `ink` 12.8:1, `inkSoft` 4.9:1, `ribbonInk` 9.0:1, `accent` 6.1:1, `danger` 6.0:1. Body text and
+  every ribbon label stay at 4.5:1 or more; only the placeholder (2.0:1) is meant to be faint.
+  Over a dark or saturated window the glass darkens a little, and the material's frost keeps the
+  text readable; check a new token over both.
+- The editing border is light on purpose (1.6:1 against the body). It marks the card you type in
+  without the dark frame the old brown border made. It is `focus`, not the system accent color,
+  which is blue for most people.
 - Lines and shades are `#5A4630` at an alpha, not black, so they tint the paper warm instead of
   graying it.
-- The editing border uses `accent`, not the system accent color, which is blue for most people
-  and would bring the blue back.
 
-To add a color, add a token with its use, check its contrast against what it sits on, and add a
-row here.
+To add a color, add a token with its use, check its contrast on the rendered glass, and add a row
+here.
 
 ## Synthesis decision
 
@@ -176,6 +193,10 @@ Later changes, after trying the app:
 - 2026-10-22, beige: the blue ribbon and white card became the warm palette in Color, so cards
   stand apart from the white windows around them. The Hide all toggle's icon flipped to show the
   current state instead of the action.
+- 2026-10-22, glass: cards and the stack became frosted glass with a beige tint, a sheen and a
+  specular rim, and corners went from 9 to 10 points. The editing border went from dark brown to
+  light caramel (`focus`), so it is less intrusive. The ribbon got lighter (`#D8C5A2` to
+  `#E6D8BC`): a gentle step down from the body (1.1:1), not a separate band.
 
 ## Tradeoffs accepted
 
