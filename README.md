@@ -17,6 +17,10 @@ Cards is a menu bar app, so it has no Dock icon. Look for the stacked-rectangles
 bar: it has Show All, Hide All, Open Stack, Settings… and Quit. **⌥⌘C** hides or shows every card
 from anywhere.
 
+On a MacBook with a crowded menu bar, macOS may hide the icon behind the camera notch. Everything
+in its menu still works without it: ⌥⌘C shows or hides the cards, and after clicking a card,
+**⌘,** opens Settings and **⌘Q** quits.
+
 ## Build from the command line
 
 ```bash

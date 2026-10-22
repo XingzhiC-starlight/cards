@@ -61,7 +61,7 @@ final class SettingsWindow: NSWindow {
     private let keys: KeyStore
     private let onChange: () -> Void
     private let field = NSSecureTextField()
-    private let status = NSTextField(labelWithString: "")
+    private let status = NSTextField(wrappingLabelWithString: "")
 
     init(keys: KeyStore, onChange: @escaping () -> Void) {
         self.keys = keys
@@ -96,6 +96,7 @@ final class SettingsWindow: NSWindow {
             stack.topAnchor.constraint(equalTo: content.topAnchor),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor),
             field.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40),
+            status.widthAnchor.constraint(equalTo: field.widthAnchor),
             buttons.trailingAnchor.constraint(equalTo: field.trailingAnchor),
         ])
         contentView = content
@@ -121,7 +122,7 @@ final class SettingsWindow: NSWindow {
 
     private func refreshStatus() {
         status.stringValue = keys.apiKey == nil
-            ? "No key saved. Cards works without one; collapsed cards just show no summaries."
+            ? "No key saved. Cards works without one; collapsed cards show “Summary unavailable”."
             : "A key is saved in your Keychain. Paste a new one to replace it."
     }
 }
