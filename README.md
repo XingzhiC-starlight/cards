@@ -15,8 +15,8 @@ Requires macOS 15 or later and Xcode 26.
 
 Cards is a menu bar app, so it has no Dock icon. Look for the stacked-rectangles icon in the menu
 bar: it has Show All, Hide All, Open Stack, Settings… and Quit. **⌥⌘C** hides or shows every card
-from anywhere. Hide All leaves the stack's tan ribbon where the stack is, so New, Pop, Clarity
-and the menu stay in reach. Opening Cards again from Finder or Spotlight shows everything.
+from anywhere. Hide All leaves the stack's tan ribbon where the stack is, so New, Clarity and
+the menu stay in reach. Opening Cards again from Finder or Spotlight shows everything.
 
 On a MacBook with a crowded menu bar, macOS may hide the icon behind the camera notch. The stack's
 tan ribbon has what you need: the eye button hides or shows everything (an open eye while cards
@@ -62,10 +62,10 @@ against another folder, pass `-CardsFolder /path/to/folder` as a launch argument
 | Make a card | **New** on the stack, or type on the stack's blank page |
 | Select a stacked card | Swipe left or right with two fingers on the stack, or click the thin band along its edge: right/bottom = next, left/top = previous |
 | Edit a stacked card | Click into it on the stack; it edits like any other card |
-| Bring a card out | Select it, then click **Pop** in the stack's tan ribbon |
+| Bring a card out | Select it, hover it and click **↗ Pop** |
 | Move a card | Drag it by its title; it snaps to the nearest cell and swaps with whatever is there, or stays where you let go, even partly off the left, right or bottom edge |
 | Put a card back | Hover it and click **↩ Stack** |
-| Collapse to a summary | Hover a card and click the collapse button, or use **Clarity** on the stack for every card |
+| Collapse to a summary | Hover a card and click the collapse button, or use **Clarity** on the stack for every card (its text turns reddish brown while on) |
 | Format | ⌘B, ⌘I, or start a line with `- `, `1. ` or `[] `; the bar at the bottom of the card has the same five actions |
 
 The stack is a loop with one blank page after the last card. Swiping past the last card shows the

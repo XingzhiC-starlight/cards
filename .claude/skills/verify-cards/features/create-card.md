@@ -38,8 +38,8 @@ Preconditions:
   `# Release checklist`, a blank line, then `Tag and publish`. The sidecar's `placements` has that
   id with `"slot" : 0`, and `stack` still lists `seed-a`, `seed-b`.
 - **Blank page.** Show the blank page and type on it. Run `cv ax click stack 0.015 0.6` (previous
-  from the top card wraps to the blank page). `cv ax text stack` prints `""` and the tree shows
-  `Pop` as `[disabled]`. Run `cv ax focus stack`, then `cv ax type 'Gamma card\ngamma body'`.
+  from the top card wraps to the blank page). `cv ax text stack` prints `""` and the tree has no
+  `↗ Pop`, since the blank page has no card buttons. Run `cv ax focus stack`, then `cv ax type 'Gamma card\ngamma body'`.
   `cv ax text stack` prints `"Gamma card\ngamma body"` and the `Cards in the stack` value goes
   from 2 to 3.
 - **Blank page saved.** Wait 1.5 s and run `cv files create-blank-page`. A new `.md` holds

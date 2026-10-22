@@ -72,14 +72,17 @@ func send(_ command: Command) {
   outside file removal all end up showing the next card. Typing on the blank page appends a card
   at its position, so the new card stays selected and the blank page moves after it.
 - **One card view, two homes.** The stack shows its selected card with the same `CardView` a
-  popped card uses. On the stack it does not drag, has no "↩ Stack" button, and leaves its border
-  to the stack. It shows the blank page when it has no card.
+  popped card uses. On the stack it does not drag and leaves its border to the stack. It shows
+  the blank page when it has no card. The hover row's move button comes from one table,
+  `CardView.Home.move`: "↩ Stack" on the desktop, "↗ Pop" on the stack, each with its tooltip
+  and command. On a full desktop the stack greys Pop and sets its tooltip to "Desktop full".
+  That flag is per desk, so `StackView` passes it to `CardView.apply` and it is not in `CardFace`.
 - **Hide all is presentation.** `Visibility` lives outside the desk and is never saved. While
-  hidden, New and Pop reveal just the card they bring out, and the stack window shrinks to its
-  ribbon instead of ordering out. The stack window gets the `Visibility` value itself: its
-  ribbon-only shape, the count badge's place and the toggle button's icon all derive from it.
-  The icon shows the current state (an eye while cards show, a slashed eye while hidden); the
-  tooltip names what a click does.
+  hidden, New reveals just the card it brings out, and the stack window shrinks to its
+  ribbon instead of ordering out. Pop goes with the stacked card, so it is unavailable then.
+  The stack window gets the `Visibility` value itself: its ribbon-only shape, the count badge's
+  place and the toggle button's icon all derive from it. The icon shows the current state (an
+  eye while cards show, a slashed eye while hidden); the tooltip names what a click does.
   The toggle calls `DeskController.toggleHidden`, the path ⌥⌘C takes, not a `Command`.
 - **Derived, idempotent side effects.** `render()` compares the desk with the real windows,
   `Library.save` with the disk, and `Summarizer.sync` with the requests in flight. Each is safe
@@ -115,14 +118,14 @@ chosen: it stays beige over white windows and only hints at what is behind.
 | `sheen` | white, 10 % to 0 | the top half of a card, fading down |
 | `rim` | white, 55 % / 5 % / 22 % | a 1.2 pt edge inside the outline, brightest top-left |
 | `ink` | `#2B2520` | card text, the caret |
-| `inkSoft` | `#716453` | list markers, summaries, card buttons, edge-band chevrons |
+| `inkSoft` | `#716453` | list markers, summaries, card buttons, edge-band chevrons, Clarity when off |
 | `inkFaint` | `#B3A68F` | the empty card's "Title" placeholder |
-| `ribbonInk` | `#46361F` | ribbon buttons and the count badge |
+| `ribbonInk` | `#46361F` | New, the ribbon's icon buttons and the count badge |
 | `line` | `#5A4630` at 18 % | card and stack outline |
 | `shade` | `#5A4630` at 7 % | a hovered edge band |
 | `guide` | `#5A4630` at 45 % | the dashed slot guide |
 | `focus` | `#DDB880` | the 2 pt border of the card you are typing in |
-| `accent` | `#823F1D` | a guide that will snap, Clarity: On |
+| `accent` | `#823F1D` | a guide that will snap, Clarity when on |
 | `danger` | `#9A2818` | "Desktop full" |
 | `highlight` | `#E8D5AE` | selected text |
 
@@ -135,7 +138,9 @@ Rules the values keep:
 - Contrast is measured on the rendered glass, since the tint is translucent. Over a white window
   the body renders `#F0ECE4` and the ribbon `#EAE2CF` (sampled from screenshots). On those:
   `ink` 12.8:1, `inkSoft` 4.9:1, `ribbonInk` 9.0:1, `accent` 6.1:1, `danger` 6.0:1. Body text and
-  every ribbon label stay at 4.5:1 or more; only the placeholder (2.0:1) is meant to be faint.
+  every ribbon label stay at 4.5:1 or more, bar one: Clarity when off is `inkSoft` on the ribbon
+  at 4.46:1, so the quiet state reads as quiet next to New. Only the placeholder (2.0:1) is meant
+  to be faint.
   Over a dark or saturated window the glass darkens a little, and the material's frost keeps the
   text readable; check a new token over both.
 - The editing border is light on purpose (1.6:1 against the body). It marks the card you type in
@@ -197,6 +202,10 @@ Later changes, after trying the app:
   specular rim, and corners went from 9 to 10 points. The editing border went from dark brown to
   light caramel (`focus`), so it is less intrusive. The ribbon got lighter (`#D8C5A2` to
   `#E6D8BC`): a gentle step down from the body (1.1:1), not a separate band.
+- 2026-10-22, Pop and Clarity: Pop left the ribbon and became "↗ Pop" in the stacked card's
+  hover row, where a desktop card has "↩ Stack", so every card's buttons sit in one row. The
+  ribbon is New and Clarity. Clarity lost its "On" and "Off" and shows its state by text color
+  (`inkSoft` off, `accent` on), with the state in its tooltip and accessibility value.
 
 ## Tradeoffs accepted
 

@@ -6,7 +6,7 @@ description: Drive the real Cards macOS app (menu bar app, card windows, the sta
 # Verify Cards
 
 Cards is a native AppKit menu bar app: each card is a borderless window, the stack is one more
-window with a tan ribbon (New, Pop, Clarity, Hide all, ⋯), and every card is a Markdown file in a
+window with a tan ribbon (New, Clarity, Hide all, ⋯), and every card is a Markdown file in a
 folder plus a hidden sidecar `.cards.json`. This skill starts an isolated copy of the app on an
 empty temp folder and drives it through macOS Accessibility, by pid, so it never touches the
 owner's own Cards or `~/Documents/Cards`.
@@ -78,12 +78,17 @@ the z-order and change after any click, so use the names.
 
 Stable handles in this app, all from the code:
 
-- Stack ribbon buttons: `New`, `Pop`, `Clarity: Off` / `Clarity: On`, `Hide all` / `Show all`,
-  `Settings and quit` (the ⋯ menu).
+- Stack ribbon buttons: `New`, `Clarity`, `Hide all` / `Show all`, `Settings and quit` (the ⋯
+  menu). Clarity always has that name. Its state is the `value="off"` or `value="on"` that `tree`
+  prints on its line (its tooltip, `Clarity is off: click to collapse every card` or `Clarity is
+  on: click to expand every card`, says it too), and its text color, which only `shot` shows.
 - Card buttons (popped card, or the stack's selected card): `Collapse this card` / `Expand this
-  card`, `Refresh summary` (collapsed with a summary only), `↩ Stack` (popped only),
+  card`, `Refresh summary` (collapsed with a summary only), `↩ Stack` (popped only), `↗ Pop`
+  (stacked card only; `[disabled]` with the tooltip `Desktop full` while the desktop is full),
   `Delete this card`. They fade in on hover, but they are in the tree at alpha 0 too, so `press`
-  works without hovering.
+  works without hovering. The stack's blank page has none of them.
+- `press` matches a button's whole title, description or tooltip, so `press "↗ Pop"` and `press
+  Clarity` work, and `press Pop` does not.
 - Delete confirmation: a sheet "Delete this card?" with buttons `Delete` and `Cancel`.
 - Count badge: static text named `Cards in the stack`, value = number of stacked cards.
 - "Desktop full": static text `Desktop full` in the ribbon, only while it applies.

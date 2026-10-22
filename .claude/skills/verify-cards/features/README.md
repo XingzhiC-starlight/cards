@@ -21,8 +21,7 @@ function defined in [../SKILL.md](../SKILL.md).
 - Prefer `cv ax press` (by button name) over `click` at coordinates. Use `click`, `scroll` and
   `drag` only for the edge bands, swipes and drags, which have no button.
 - Wait 1.5 s after the last change before `cv files`: saves are debounced by one second.
-- Treat every command as literal. Keep quoted names, including `↩ Stack` and `Clarity: Off`, as
-  written.
+- Treat every command as literal. Keep quoted names, including `↩ Stack` and `↗ Pop`, as written.
 
 ## Proof and skip reporting
 

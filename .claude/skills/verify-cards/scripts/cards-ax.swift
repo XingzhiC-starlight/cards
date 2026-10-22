@@ -141,7 +141,7 @@ case "tree":
             var line = String(repeating: "  ", count: depth) + role
             let n = names(el)
             if !n.isEmpty { line += " " + n.map(json).joined(separator: " | ") }
-            if role != "AXButton", let v: String = attr(el, kAXValueAttribute), !v.isEmpty {
+            if let v: String = attr(el, kAXValueAttribute), !v.isEmpty {
                 line += " value=" + json(String(v.prefix(120)))
             }
             if let enabled: Bool = attr(el, kAXEnabledAttribute), !enabled { line += " [disabled]" }
