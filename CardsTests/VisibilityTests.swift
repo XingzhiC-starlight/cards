@@ -56,7 +56,8 @@ final class VisibilityTests: XCTestCase {
         var visibility = Visibility.hideAll
         let second = desk.apply(.new(at: now.addingTimeInterval(1)))!
         visibility.reveal(second)
-        XCTAssertEqual(desk.place(of: .card(second)), .slot(Slot(index: 2)!), "it goes after the hidden card's slot")
+        XCTAssertEqual(desk.place(of: .card(first)), .slot(Slot(index: 0)!), "the hidden card has the first slot")
+        XCTAssertEqual(desk.place(of: .card(second)), .slot(Slot(index: 1)!), "it goes after the hidden card's slot")
         XCTAssertTrue(visibility.shows(second), "the new card shows")
         XCTAssertFalse(visibility.shows(first), "the hidden one does not")
     }

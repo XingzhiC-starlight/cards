@@ -32,11 +32,12 @@ final class DeskTests: XCTestCase {
         }
     }
 
-    /// The stack top-left and a card in each of the other 19 slots.
+    /// The stack in its default place and a card in each of the other 19 slots.
     private func fullDesktop(stack: String...) -> Desk {
-        let names = (1..<Slot.count).map { "p\($0)" }
+        let slots = Slot.all.filter { $0 != Slot.stackHome }
+        let names = slots.map { "p\($0.index)" }
         return Desk(notes: notes(names + stack), saved: SavedDesk(
-            placements: names.enumerated().map { SavedPlacement(slot: $0.offset + 1, card: id($0.element)) },
+            placements: zip(slots, names).map { SavedPlacement(slot: $0.index, card: id($1)) },
             stack: stack.map(id)))
     }
 
@@ -72,7 +73,7 @@ final class DeskTests: XCTestCase {
         desk.apply(.flipStack(.next))
         let popped = desk.apply(.pop)
         XCTAssertEqual(popped, id("b"), "after one flip the second card is the one shown, and it pops")
-        XCTAssertEqual(popped.flatMap { desk.place(of: .card($0)) }, slot(1), "it lands in the first slot after the stack's")
+        XCTAssertEqual(popped.flatMap { desk.place(of: .card($0)) }, slot(0), "it lands in the first free slot")
         XCTAssertEqual(stackOrder(desk), ["a", "c"], "the rest keep their order")
         XCTAssertEqual(shown(desk), "c", "the stack shows the card that was under it")
     }

@@ -118,7 +118,7 @@ enum Command {
 struct Desk: Equatable {
     /// The cards on the desktop, in the order they arrived.
     private(set) var popped: [PoppedCard]
-    /// Where the stack window is. Top-left until moved.
+    /// Where the stack window is. Top-right (`Slot.stackHome`) until moved.
     private(set) var stackPlace: Place
     /// Top card first. Its order changes only when a card enters or leaves, never on a flip.
     private(set) var stack: [Card]
@@ -133,7 +133,7 @@ struct Desk: Equatable {
     /// Rebuilds the desk from disk. `notes` decides which cards exist; `saved` only places them.
     /// Total over any input: unknown ids, invalid or doubly-used slots and duplicates are dropped,
     /// and cards the sidecar never heard of join the bottom of the stack in id (that is, creation)
-    /// order. A missing sidecar (`SavedDesk()`) puts every card in the stack and the stack top-left.
+    /// order. A missing sidecar (`SavedDesk()`) puts every card in the stack and the stack top-right.
     init(notes: [CardID: Note], saved: SavedDesk) {
         let collapsed = Set(saved.collapsed)
         var summaries: [CardID: Summary] = [:]
@@ -142,13 +142,15 @@ struct Desk: Equatable {
             notes[id].map { Card(id: id, note: $0, collapsed: collapsed.contains(id), summary: summaries[id]) }
         }
 
-        // Version 1 numbered 19 slots after the stack's fixed top-left cell.
-        let shift = saved.version < 2 ? 1 : 0
+        // Version 1 numbered 19 slots after the stack's fixed top-left cell, so it stays there.
+        let isVersion1 = saved.version < 2
+        let shift = isVersion1 ? 1 : 0
         func place(slot: Int?, free: GridPoint?) -> Place? {
             if let free { return .free(free) }
             return slot.flatMap { Slot(index: $0 + shift) }.map(Place.slot)
         }
-        let stackPlace = place(slot: saved.stackSlot, free: saved.stackFree) ?? .slot(Slot.all[0])
+        let stackPlace = place(slot: saved.stackSlot, free: saved.stackFree)
+            ?? .slot(isVersion1 ? Slot.all[0] : Slot.stackHome)
         var snapped: Set<Slot> = if case .slot(let slot) = stackPlace { [slot] } else { [] }
         var placed = Set<CardID>()
         var popped: [PoppedCard] = []
@@ -481,7 +483,8 @@ struct SavedDesk: Codable, Equatable {
     /// fixed top-left cell, so its slot numbers are one less.
     var version = 2
     var clarity = false
-    /// The stack's place: `stackFree` if set, else `stackSlot`, else the top-left slot.
+    /// The stack's place: `stackFree` if set, else `stackSlot`, else `Slot.stackHome` (the top-left
+    /// cell for version 1).
     var stackSlot: Int?
     var stackFree: GridPoint?
     var placements: [SavedPlacement] = []
