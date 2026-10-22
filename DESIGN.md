@@ -4,8 +4,9 @@ How the prototype in [CARDS-SPEC.md](CARDS-SPEC.md) is put together, and why.
 
 ## Problem
 
-Up to 19 card windows and a stack window are all views of one tightly coupled state. Pop, the
-stack's edge bands and "↩ Stack" all reorder the stack the others rely on. Clarity has a global
+Up to 19 card windows and a stack window are all views of one tightly coupled state. Pop, "↩
+Stack", delete and the stack's swipes and edge bands all move through one stack loop, and the
+card the stack shows is editable in place. Clarity has a global
 switch plus a per-card "last state". Summaries arrive later and must attach to the right version
 of the right card. All of it persists to Markdown plus one sidecar. The header is both the first
 line of editable text and the handle you drag the card by.
@@ -17,12 +18,12 @@ renders or requests a summary itself: after every command the controller derives
 the new desk.
 
 ```swift
-// A view reports intent (StackView, click in its right edge band):
+// A view reports intent (StackWindow, a two-finger swipe or a click in the right edge band):
 send(.flipStack(.next))
 
 // A rule, tested with plain values: no AppKit, no disk.
 var desk = Desk(notes: notes, saved: SavedDesk(stack: [d, a, b, c]))
-let shown = desk.apply(.pop(nil))      // d → slot 0
+let shown = desk.apply(.pop)           // d → slot 0
 
 // The controller: the whole side-effect story.
 func send(_ command: Command) {
@@ -37,22 +38,33 @@ func send(_ command: Command) {
 
 | File | What it owns |
 | --- | --- |
-| `Desk.swift` | the state, `Command`, and every rule (pop, flip, swap, clarity, restore) |
+| `Desk.swift` | the state, `Command`, every rule (pop, flip, swap, clarity, restore), and Hide all's `Visibility` |
 | `Grid.swift` | slot, frame and edge-band geometry (pure) |
 | `Note.swift` | a card's content, its Markdown format, and the typing rules for lists |
 | `DeskController.swift` | the single owner of the desk and of every window |
 | `Library.swift` | `~/Documents/Cards/*.md` and the hidden sidecar `.cards.json` |
 | `Summarizer.swift` | summary requests and the one Anthropic call |
 | `CardWindow.swift`, `CardEditor.swift` | the card window, press routing, and the text view |
-| `StackWindow.swift`, `Settings.swift`, `App.swift` | stack UI; API key and settings; entry point, menu bar, hotkey |
+| `StackWindow.swift`, `Swipe.swift` | the stack window; the rules that turn scroll events into flips (pure) |
+| `Settings.swift`, `App.swift` | API key and settings; entry point, menu bar, hotkey, reopen |
 
 - **Location is ownership.** A `Card` value lives inside its location: a slot entry or a stack
   position. There is no id-to-card map to keep in step,
   so "one card, one place" holds by construction, and a moving card carries its collapsed state
   and summary with it. The stack's top-left cell is not a `Slot`, so no card can land on it.
-- **Edge bands flip the stack.** Only the stack window has edge bands. Next sends the top card
-  to the bottom, previous brings the bottom card back up: a loop, each undoing the other, so every
-  card hidden under the stack can be shown. Pop takes whichever card is on top.
+- **The stack is a loop with one blank page.** `Desk.stack` is the stacked cards, top first,
+  and `Desk.selection` is the loop position: an index into the stack, or `stack.count` for the
+  blank page after the bottom card. Next and previous move the position and never reorder the
+  cards, so they undo each other and work with any number of cards. Every insert and remove goes
+  through two helpers that keep the position on the same item, which is how "Pop", delete and an
+  outside file removal all end up showing the next card. Typing on the blank page appends a card
+  at its position, so the new card stays selected and the blank page moves after it.
+- **One card view, two homes.** The stack shows its selected card with the same `CardView` a
+  popped card uses. On the stack it does not drag, has no "↩ Stack" button, and leaves its border
+  to the stack. It shows the blank page when it has no card.
+- **Hide all is presentation.** `Visibility` lives outside the desk and is never saved. While
+  hidden, New and Pop reveal just the card they bring out, and the stack window shrinks to its
+  ribbon instead of ordering out.
 - **Derived, idempotent side effects.** `render()` compares the desk with the real windows,
   `Library.save` with the disk, and `Summarizer.sync` with the requests in flight. Each is safe
   to run any number of times.
@@ -88,6 +100,11 @@ Later changes, after trying the app:
   `AppDelegate.makeAppMenu`), because a crowded menu bar can hide the icon behind the notch.
 - Hover follows the pointer's real position (one mouse-move monitor in `DeskController`) instead
   of per-view enter/exit events, which a fast pointer can skip.
+- 2026-10-22 revision: the selected stacked card became editable, with its own clarity, refresh
+  and trash buttons. The loop gained the blank page, and a flip moves a position instead of
+  rotating the stack, so the stack's order no longer changes when you browse it. Two-finger
+  swipes switch cards; the edge bands stay as the click alternative. Clarity and summaries now
+  cover stacked cards too, which reverses the Sonnet graft above. Hide all keeps the ribbon.
 
 ## Tradeoffs accepted
 
@@ -98,6 +115,8 @@ Later changes, after trying the app:
 - We accept rescanning the folder when the app becomes active, instead of live file watching.
 - We accept that pressing on the header and moving drags the card instead of selecting text;
   double-click and shift-click still select.
+- We accept a burst of summary requests at launch when many stacked cards have none cached, in
+  exchange for every card having a summary under the same rules.
 - We accept the Keychain for the API key, which may ask for access again after each rebuild of an
   unsigned debug build.
 
@@ -110,7 +129,13 @@ Later changes, after trying the app:
 
 ## Spec gaps resolved
 
-- New is refused when the desktop is full, the same as Pop; the stack shows "Desktop full".
+- New on a full desktop beeps, shows "Desktop full", and shows the stack's blank page with the
+  cursor in it. While hidden, that also brings back the stack's card area.
+- "↩ Stack" shows the returned card on the stack, so you see where it went.
+- Switching the stack to another card takes the cursor out of the editor, so typing never lands
+  in a card you did not click.
+- A file added outside the app while Clarity is ON joins the stack collapsed.
+- While hidden, swipes and edge bands do nothing: there is no card area to switch.
 - The menu bar menu adds "Settings…" so the API key has somewhere to go.
 - With no API key, a collapsed card shows "Summary unavailable" with the reason on hover.
 - A collapsed card whose body is empty or one line shows that line in the lighter style.
