@@ -60,7 +60,8 @@ commands and observable proof.
   collapsed card shows.
 - [Delete a card](./delete-card.md): the trash button, its confirmation, and the file leaving the
   folder.
+- [Move cards and the stack](./drag.md): dragging a card or the stack to snap, swap, stay free
+  between slots, or hang off a screen edge, and the places the sidecar saves.
 
-Not mapped yet: moving cards and the stack by drag (snap, swap, free places, overhang), the
-formatting bar and list typing, Settings… and the API key, summaries with a real key, the menu bar
-icon, and folder changes made outside the app.
+Not mapped yet: the formatting bar and list typing, Settings… and the API key, summaries with a
+real key, the menu bar icon, and folder changes made outside the app.
