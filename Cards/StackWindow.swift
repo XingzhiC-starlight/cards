@@ -1,8 +1,8 @@
 import AppKit
 
 /// The stack: its own card-sized window in the top-left grid cell, the app's control center.
-/// Same window behaviour as a card (borderless, normal layer, all Spaces), but it never moves.
-/// Its selected card is edited in place.
+/// Same window behaviour as a card (borderless, normal layer, all Spaces), but it never moves
+/// and never hides: under Hide all it shrinks to its ribbon. Its selected card is edited in place.
 final class StackWindow: NSWindow {
     private let stackView: StackView
     private let send: (Command) -> Void
@@ -20,7 +20,7 @@ final class StackWindow: NSWindow {
 
     /// A two-finger horizontal swipe flips the stack; a vertical one scrolls the card's text.
     override func sendEvent(_ event: NSEvent) {
-        guard event.type == .scrollWheel else {
+        guard event.type == .scrollWheel, stackView.showsCard else {
             super.sendEvent(event)
             return
         }
@@ -42,9 +42,17 @@ final class StackWindow: NSWindow {
         stackView.editingStateChanged()
     }
 
-    func apply(_ face: StackFace, frame: CGRect) {
+    /// `ribbonOnly` (Hide all) shrinks the window to the top of `cell` and hides the card area.
+    func apply(_ face: StackFace, cell: CGRect, ribbonOnly: Bool) {
+        stackView.apply(face, showsCard: !ribbonOnly)
+        let frame = ribbonOnly ? Self.ribbonOnlyFrame(in: cell) : cell
         if self.frame != frame { setFrame(frame, display: true) }
-        stackView.apply(face)
+    }
+
+    /// The ribbon and the gap around it, at the top of the stack's cell.
+    static func ribbonOnlyFrame(in cell: CGRect) -> CGRect {
+        let height = StackView.ribbonHeight + 2 * CardShape.gap
+        return CGRect(x: cell.minX, y: cell.maxY - height, width: cell.width, height: height)
     }
 
     /// Makes this window key with the cursor in the shown card (the blank page after New refused).
@@ -74,6 +82,8 @@ private final class StackView: NSView {
     private let clarityButton: ActionButton
     private let menuButton = ActionButton(symbol: "ellipsis.circle", help: "Show all, hide all, settings and quit")
     private let cardView: CardView
+    /// False under Hide all: the window is only the ribbon, and the edge bands do nothing.
+    private(set) var showsCard = true
     private let badge = NSTextField(labelWithString: "0")
     private let fullLabel = NSTextField(labelWithString: "Desktop full")
     private var hoveredEdge: Edge? {
@@ -130,7 +140,15 @@ private final class StackView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func apply(_ face: StackFace) {
+    func apply(_ face: StackFace, showsCard: Bool) {
+        if self.showsCard != showsCard {
+            self.showsCard = showsCard
+            cardView.isHidden = !showsCard
+            if !showsCard {
+                cardView.dropFocus()
+                hoveredEdge = nil
+            }
+        }
         cardView.apply(face.selected)
         badge.stringValue = "\(face.count)"
         fullLabel.isHidden = !face.desktopFull
@@ -144,7 +162,7 @@ private final class StackView: NSView {
     /// The pointer is at `point` (view coordinates), or outside the window.
     func hover(at point: NSPoint?) {
         hoveredEdge = point.flatMap(edge(at:))
-        cardView.setHovering(point.map { cardView.frame.contains($0) } ?? false)
+        cardView.setHovering(showsCard && point.map { cardView.frame.contains($0) } ?? false)
     }
 
     func editingStateChanged() { cardView.editingStateChanged() }
@@ -180,7 +198,9 @@ private final class StackView: NSView {
         let left = max(inner.minX - CardView.margin.width, bounds.minX)
         let right = min(inner.maxX + CardView.margin.width, bounds.maxX)
         let bottom = max(inner.minY - CardView.margin.height, bounds.minY)
-        cardView.frame = NSRect(x: left, y: bottom, width: right - left, height: ribbonRect.minY - bottom)
+        if showsCard {
+            cardView.frame = NSRect(x: left, y: bottom, width: right - left, height: ribbonRect.minY - bottom)
+        }
     }
 
     // MARK: Drawing
@@ -225,7 +245,7 @@ private final class StackView: NSView {
     }
 
     private func edge(at point: CGPoint) -> Edge? {
-        guard !content.contains(point) else { return nil }
+        guard showsCard, !content.contains(point) else { return nil }
         return EdgeBands.edge(at: point, in: bounds)
     }
 }

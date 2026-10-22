@@ -249,9 +249,12 @@ final class CardView: NSView {
 
     // MARK: Layout
 
-    /// The area inside the margin. Everything lives here.
+    /// The area inside the margin. Everything lives here. Empty, not `insetBy`'s infinite null
+    /// rect, when the view is smaller than its margins.
     private var content: NSRect {
-        bounds.insetBy(dx: Self.margin.width, dy: Self.margin.height)
+        NSRect(x: bounds.minX + Self.margin.width, y: bounds.minY + Self.margin.height,
+               width: max(bounds.width - 2 * Self.margin.width, 0),
+               height: max(bounds.height - 2 * Self.margin.height, 0))
     }
 
     override func layout() {

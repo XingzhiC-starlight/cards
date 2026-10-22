@@ -10,8 +10,8 @@ import AppKit
 final class DeskController {
     private(set) var desk: Desk
     private var grid: Grid
-    /// "Hide all" / ⌥⌘C. Presentation only: not part of the desk and not persisted.
-    private var hidden = false
+    /// What "Hide all" / ⌥⌘C has hidden. Presentation only: not part of the desk, not persisted.
+    private var visibility = Visibility.all
     /// One window per popped card, created on pop and closed when the card leaves the desktop.
     private var cardWindows: [CardID: CardWindow] = [:]
     private lazy var stackWindow = StackWindow(send: { [unowned self] in self.send($0) }, menu: appMenu)
@@ -44,6 +44,9 @@ final class DeskController {
         let carriedSelection: NSRange? = if case .pop = command { stackWindow.editingSelection } else { nil }
         let arrived = desk.apply(command)
         let desktopFull = arrived == nil && desk.firstFreeSlot == nil
+        // New and Pop while hidden show only what they brought out.
+        if let arrived { visibility.reveal(arrived) }
+        if case .new = command, desktopFull { visibility.revealStackCard() }
         let typing: CardID? = if case .writeBlank = command { desk.selectedCard?.id } else { command.typedCard }
         scheduleSave()
         summarizer.sync(desk.allCards, typing: typing)
@@ -70,7 +73,7 @@ final class DeskController {
     // MARK: Menu bar, hotkey, app events
 
     func setHidden(_ hide: Bool) {
-        hidden = hide
+        visibility = hide ? .hideAll : .all
         render()
         if !hide {
             NSApp.activate()
@@ -79,7 +82,7 @@ final class DeskController {
     }
 
     /// ⌥⌘C.
-    func toggleHidden() { setHidden(!hidden) }
+    func toggleHidden() { setHidden(!visibility.isHidden) }
 
     func openStack() {
         setHidden(false)
@@ -130,14 +133,15 @@ final class DeskController {
         for (slot, face) in popped {
             let window = cardWindows[face.id] ?? makeCardWindow(face.id)
             window.apply(face, frame: grid.frame(of: slot))
-            show(window)
+            setVisible(window, visibility.shows(face.id))
         }
-        stackWindow.apply(desk.stackFace(hasKey: keys.apiKey != nil), frame: grid.stackFrame)
-        show(stackWindow)
+        stackWindow.apply(desk.stackFace(hasKey: keys.apiKey != nil), cell: grid.stackFrame,
+                          ribbonOnly: !visibility.showsStackCard)
+        setVisible(stackWindow, true)   // Hide all keeps the ribbon
     }
 
-    private func show(_ window: NSWindow) {
-        if hidden {
+    private func setVisible(_ window: NSWindow, _ visible: Bool) {
+        if !visible {
             window.orderOut(nil)
         } else if !window.isVisible {
             window.orderFront(nil)   // only newly shown windows: never reshuffle the z-order
@@ -153,12 +157,11 @@ final class DeskController {
     }
 
     /// macOS brings forward only the clicked window when an app activates. Cards are one group,
-    /// so order the stack and every card front, then the key window last so it stays on top.
-    /// Another app's click needs no code: its window simply comes in front of ours.
+    /// so order the stack and every visible card front, then the key window last so it stays on
+    /// top. Another app's click needs no code: its window simply comes in front of ours.
     private func raiseGroup() {
-        guard !hidden else { return }
         stackWindow.orderFront(nil)
-        for window in cardWindows.values { window.orderFront(nil) }
+        for window in cardWindows.values where window.isVisible { window.orderFront(nil) }
         NSApp.keyWindow?.orderFront(nil)
     }
 

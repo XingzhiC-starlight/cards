@@ -376,6 +376,47 @@ extension Desk {
     }
 }
 
+// MARK: - Hide all
+
+/// What "Hide all" has hidden. Presentation only: not part of the desk and never persisted, so
+/// every launch starts with `.all`.
+enum Visibility: Equatable {
+    case all
+    /// Hide all. `revealed`: popped cards that New or Pop has shown since; `stackCard`: New on a
+    /// full desktop showed the stack's blank page.
+    case hidden(revealed: Set<CardID>, stackCard: Bool)
+
+    /// Hide all: every popped card and the stack's card area go; the stack's ribbon stays.
+    static let hideAll = Visibility.hidden(revealed: [], stackCard: false)
+
+    var isHidden: Bool { self != .all }
+
+    func shows(_ id: CardID) -> Bool {
+        switch self {
+        case .all: true
+        case .hidden(let revealed, _): revealed.contains(id)
+        }
+    }
+
+    var showsStackCard: Bool {
+        switch self {
+        case .all: true
+        case .hidden(_, let stackCard): stackCard
+        }
+    }
+
+    mutating func reveal(_ id: CardID) {
+        guard case .hidden(var revealed, let stackCard) = self else { return }
+        revealed.insert(id)
+        self = .hidden(revealed: revealed, stackCard: stackCard)
+    }
+
+    mutating func revealStackCard() {
+        guard case .hidden(let revealed, _) = self else { return }
+        self = .hidden(revealed: revealed, stackCard: true)
+    }
+}
+
 // MARK: - What the sidecar remembers
 
 /// The part of the desk that is not in the Markdown files. `Library` stores it as JSON in the

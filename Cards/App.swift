@@ -45,6 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) { controller?.flush() }
     func applicationDidChangeScreenParameters(_ notification: Notification) { controller?.screensChanged() }
 
+    /// Opening the app again (Finder, Spotlight, Launchpad) while it runs shows everything and
+    /// brings the app forward. Returning false skips the default, which has no window to open.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        controller?.setHidden(false)
+        return false
+    }
+
     /// Menu bar icon. A crowded menu bar can hide it behind the notch, so the stack's ribbon
     /// offers the same menu.
     private func makeStatusItem() -> NSStatusItem {
