@@ -32,12 +32,15 @@ final class DeskTests: XCTestCase {
         }
     }
 
+    /// The stack top-left and a card in each of the other 19 slots.
     private func fullDesktop(stack: String...) -> Desk {
-        let names = (0..<Slot.count).map { "p\($0)" }
+        let names = (1..<Slot.count).map { "p\($0)" }
         return Desk(notes: notes(names + stack), saved: SavedDesk(
-            placements: names.enumerated().map { SavedPlacement(slot: $0.offset, card: id($0.element)) },
+            placements: names.enumerated().map { SavedPlacement(slot: $0.offset + 1, card: id($0.element)) },
             stack: stack.map(id)))
     }
+
+    private func slot(_ index: Int) -> Place { .slot(Slot(index: index)!) }
 
     func testTheLoopShowsEachCardThenTheBlankPageThenWrapsAround() {
         let desk = deskWithStack("a", "b")
@@ -69,7 +72,7 @@ final class DeskTests: XCTestCase {
         desk.apply(.flipStack(.next))
         let popped = desk.apply(.pop)
         XCTAssertEqual(popped, id("b"), "after one flip the second card is the one shown, and it pops")
-        XCTAssertEqual(popped.flatMap { desk.slot(of: $0) }?.index, 0, "it lands in the first slot")
+        XCTAssertEqual(popped.flatMap { desk.place(of: .card($0)) }, slot(1), "it lands in the first slot after the stack's")
         XCTAssertEqual(stackOrder(desk), ["a", "c"], "the rest keep their order")
         XCTAssertEqual(shown(desk), "c", "the stack shows the card that was under it")
     }
@@ -189,7 +192,7 @@ final class DeskTests: XCTestCase {
         XCTAssertEqual(shown(desk), "x", "a card shows before")
         XCTAssertNil(desk.apply(.new(at: now)), "the desktop is full, so no card arrives")
         XCTAssertEqual(shown(desk), "blank", "the stack shows its blank page instead")
-        XCTAssertEqual(desk.allCards.count, Slot.count + 1, "and nothing was created")
+        XCTAssertEqual(desk.allCards.count, 19 + 1, "and nothing was created")
     }
 
     func testNewIsRefusedOnceAllNineteenSlotsAreFull() {
@@ -210,7 +213,7 @@ final class DeskTests: XCTestCase {
         desk.apply(.returnToStack(popped))
         XCTAssertEqual(stackOrder(desk), ["b", "a", "c"], "the card is on top")
         XCTAssertEqual(shown(desk), "b", "and the stack shows it")
-        XCTAssertNil(desk.slot(of: popped), "it left the desktop")
+        XCTAssertNil(desk.place(of: .card(popped)), "it left the desktop")
     }
 
     func testLaunchShowsTheTopCardOrTheBlankPageWhenEmpty() {
@@ -262,8 +265,8 @@ final class DeskTests: XCTestCase {
             placements: [SavedPlacement(slot: 0, card: id("ghost")), SavedPlacement(slot: 1, card: id("a"))],
             stack: [id("gone"), id("c")])
         let desk = Desk(notes: notes(["a", "b", "c", "d"]), saved: saved)
-        XCTAssertNil(desk.slot(of: id("ghost")), "a placement whose file is missing is dropped")
-        XCTAssertEqual(desk.slot(of: id("a"))?.index, 1, "a placement whose file exists is kept")
+        XCTAssertNil(desk.place(of: .card(id("ghost"))), "a placement whose file is missing is dropped")
+        XCTAssertEqual(desk.place(of: .card(id("a"))), slot(1), "a placement whose file exists is kept")
         XCTAssertEqual(stackOrder(desk), ["c", "b", "d"],
                        "a stack entry whose file is missing is dropped; files the sidecar never heard of go last, by id")
     }

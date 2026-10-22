@@ -13,7 +13,7 @@ struct CardID: RawRepresentable, Hashable, Comparable, Codable {
     static func < (a: CardID, b: CardID) -> Bool { a.rawValue < b.rawValue }
 }
 
-/// Everything about one card. A `Card` value lives in exactly one place, a desktop slot or the
+/// Everything about one card. A `Card` value lives in exactly one place, the desktop or the
 /// stack, and moves between them whole. Its clarity state and summary therefore travel with it
 /// and can never be orphaned or attached to the wrong card.
 struct Card: Equatable {
@@ -53,6 +53,18 @@ enum Direction: Equatable {
     case previous, next
 }
 
+/// Something that can be dragged around the desktop.
+enum Movable: Hashable {
+    case stack
+    case card(CardID)
+}
+
+/// A card on the desktop and where it is.
+struct PoppedCard: Equatable {
+    var card: Card
+    var place: Place
+}
+
 // MARK: - Commands
 
 /// Every way the state can change. Views, the summarizer and the folder rescan all send these to
@@ -69,8 +81,9 @@ enum Command {
     case flipStack(Direction)
     /// The first character typed on the stack's blank page. Only meaningful while it shows.
     case writeBlank(Note, at: Date)
-    /// Header drag released over `Slot`; swaps with the occupant, if any.
-    case move(CardID, to: Slot)
+    /// A card's header or the stack's ribbon was dragged and released (`Place.dropped(at:)`).
+    /// Onto a slot held by another snapped item, the two swap.
+    case move(Movable, to: Place)
     /// Trash button, after the user confirmed "Delete this card?".
     case delete(CardID)
     /// Every text change in a card's editor.
@@ -94,16 +107,19 @@ enum Command {
 
 // MARK: - Desk
 
-/// The single source of truth: which card is in which slot, the stack order, which stack page
-/// shows, global clarity, and (inside each `Card`) content, collapsed state and summary.
+/// The single source of truth: where each popped card and the stack are, the stack order, which
+/// stack page shows, global clarity, and (inside each `Card`) content, collapsed state and summary.
 ///
 /// Invariants, all kept by construction in this file:
-/// - every card is in exactly one place (one slot cell or one stack position);
-/// - `slots.count == Slot.count`, so the stack's top-left cell can never hold a card;
+/// - every card is in exactly one place (one desktop entry or one stack position);
+/// - no two snapped items (cards or the stack) share a slot; free ones may overlap anything;
+/// - at most `Slot.count - 1` cards are on the desktop;
 /// - `selection` is in `0...stack.count`.
 struct Desk: Equatable {
-    /// Indexed by `Slot.index`.
-    private(set) var slots: [Card?]
+    /// The cards on the desktop, in the order they arrived.
+    private(set) var popped: [PoppedCard]
+    /// Where the stack window is. Top-left until moved.
+    private(set) var stackPlace: Place
     /// Top card first. Its order changes only when a card enters or leaves, never on a flip.
     private(set) var stack: [Card]
     /// The stack's loop position: the stacked card that shows, or `stack.count` for the blank
@@ -117,7 +133,7 @@ struct Desk: Equatable {
     /// Rebuilds the desk from disk. `notes` decides which cards exist; `saved` only places them.
     /// Total over any input: unknown ids, invalid or doubly-used slots and duplicates are dropped,
     /// and cards the sidecar never heard of join the bottom of the stack in id (that is, creation)
-    /// order. A missing sidecar (`SavedDesk()`) puts every card in the stack.
+    /// order. A missing sidecar (`SavedDesk()`) puts every card in the stack and the stack top-left.
     init(notes: [CardID: Note], saved: SavedDesk) {
         let collapsed = Set(saved.collapsed)
         var summaries: [CardID: Summary] = [:]
@@ -126,12 +142,24 @@ struct Desk: Equatable {
             notes[id].map { Card(id: id, note: $0, collapsed: collapsed.contains(id), summary: summaries[id]) }
         }
 
+        // Version 1 numbered 19 slots after the stack's fixed top-left cell.
+        let shift = saved.version < 2 ? 1 : 0
+        func place(slot: Int?, free: GridPoint?) -> Place? {
+            if let free { return .free(free) }
+            return slot.flatMap { Slot(index: $0 + shift) }.map(Place.slot)
+        }
+        let stackPlace = place(slot: saved.stackSlot, free: saved.stackFree) ?? .slot(Slot.all[0])
+        var snapped: Set<Slot> = if case .slot(let slot) = stackPlace { [slot] } else { [] }
         var placed = Set<CardID>()
-        var slots = [Card?](repeating: nil, count: Slot.count)
+        var popped: [PoppedCard] = []
         for p in saved.placements {
-            guard let slot = Slot(index: p.slot), slots[slot.index] == nil,
+            guard popped.count < Slot.count - 1, let at = place(slot: p.slot, free: p.free),
                   !placed.contains(p.card), let c = card(p.card) else { continue }
-            slots[slot.index] = c
+            if case .slot(let slot) = at {
+                guard !snapped.contains(slot) else { continue }
+                snapped.insert(slot)
+            }
+            popped.append(PoppedCard(card: c, place: at))
             placed.insert(p.card)
         }
         var stack: [Card] = []
@@ -140,7 +168,8 @@ struct Desk: Equatable {
             stack.append(c)
             placed.insert(id)
         }
-        self.slots = slots
+        self.popped = popped
+        self.stackPlace = stackPlace
         self.stack = stack
         self.selection = 0
         self.clarity = saved.clarity
@@ -148,18 +177,30 @@ struct Desk: Equatable {
 
     // MARK: Queries
 
-    /// Pop order: the first slot (left → right, top → bottom) with no card. Nil = "Desktop full".
-    var firstFreeSlot: Slot? { Slot.all.first { slots[$0.index] == nil } }
+    /// Pop order: the first slot (left → right, top → bottom) that no card and not the stack
+    /// takes, snapped or covering it most. Nil = "Desktop full", which also holds at 19 popped
+    /// cards, since free cards piled into one slot leave others untaken.
+    var firstFreeSlot: Slot? {
+        guard popped.count < Slot.count - 1 else { return nil }
+        let taken = Set(popped.map(\.place.slot) + [stackPlace.slot])
+        return Slot.all.first { !taken.contains($0) }
+    }
 
     var allCards: [Card] { poppedCards + stack }
 
     /// The stacked card that shows. Nil while the blank page shows.
     var selectedCard: Card? { stack.indices.contains(selection) ? stack[selection] : nil }
 
-    /// The cards on the desktop, in slot order.
-    var poppedCards: [Card] { slots.compactMap { $0 } }
+    /// The cards on the desktop, in the order they arrived.
+    var poppedCards: [Card] { popped.map(\.card) }
 
-    func slot(of id: CardID) -> Slot? { Slot.all.first { slots[$0.index]?.id == id } }
+    /// Where `item` is; nil for a card that is not on the desktop.
+    func place(of item: Movable) -> Place? {
+        switch item {
+        case .stack: stackPlace
+        case .card(let id): popped.first { $0.card.id == id }?.place
+        }
+    }
 
     /// A file stem for a new card: "yyyy-MM-dd HHmmss", with " 2", " 3"… if already taken.
     func freshID(at date: Date) -> CardID {
@@ -187,7 +228,7 @@ struct Desk: Equatable {
         case .returnToStack(let id): returnToStack(id)
         case .flipStack(let direction): flipStack(direction)
         case .writeBlank(let note, let date): writeBlank(note, at: date)
-        case .move(let id, let slot): move(id, to: slot)
+        case .move(let item, let place): move(item, to: place)
         case .delete(let id): delete(id)
         case .edit(let id, let note): update(id) { $0.note = note }
         case .setCollapsed(let id, let collapsed): update(id) { $0.collapsed = collapsed }
@@ -208,7 +249,7 @@ struct Desk: Equatable {
             return nil
         }
         let card = Card(id: freshID(at: date), note: .blank, collapsed: false)   // always expanded
-        slots[slot.index] = card
+        popped.append(PoppedCard(card: card, place: .slot(slot)))
         return card.id
     }
 
@@ -216,14 +257,14 @@ struct Desk: Equatable {
     private mutating func pop() -> CardID? {
         guard let slot = firstFreeSlot, selection < stack.count else { return nil }
         let card = removeCard(at: selection)
-        slots[slot.index] = card
+        popped.append(PoppedCard(card: card, place: .slot(slot)))
         return card.id
     }
 
+    /// The card forgets where it was: a later Pop takes the first free slot.
     private mutating func returnToStack(_ id: CardID) {
-        guard let slot = slot(of: id), let card = slots[slot.index] else { return }
-        slots[slot.index] = nil
-        insertCard(card, at: 0)
+        guard let i = popped.firstIndex(where: { $0.card.id == id }) else { return }
+        insertCard(popped.remove(at: i).card, at: 0)
         selection = 0
     }
 
@@ -246,16 +287,33 @@ struct Desk: Equatable {
         selection -= 1
     }
 
-    /// Header drag released: move to `target`, swapping with its occupant.
-    private mutating func move(_ id: CardID, to target: Slot) {
-        guard let from = slot(of: id), from != target else { return }
-        slots.swapAt(from.index, target.index)
+    /// Drag released: `item` goes to `target`. A snapped item already in that slot takes the
+    /// mover's old place, a slot or an exact free point; free items over the slot stay put.
+    private mutating func move(_ item: Movable, to target: Place) {
+        guard let from = place(of: item), from != target else { return }
+        if case .slot = target, let occupant = snapped(at: target), occupant != item {
+            setPlace(of: occupant, to: from)
+        }
+        setPlace(of: item, to: target)
+    }
+
+    private func snapped(at slot: Place) -> Movable? {
+        if stackPlace == slot { return .stack }
+        return popped.first { $0.place == slot }.map { .card($0.card.id) }
+    }
+
+    private mutating func setPlace(of item: Movable, to place: Place) {
+        switch item {
+        case .stack: stackPlace = place
+        case .card(let id):
+            if let i = popped.firstIndex(where: { $0.card.id == id }) { popped[i].place = place }
+        }
     }
 
     /// Deleting the selected stacked card shows the one under it (the blank page after the last).
     private mutating func delete(_ id: CardID) {
-        if let slot = slot(of: id) {
-            slots[slot.index] = nil
+        if let i = popped.firstIndex(where: { $0.card.id == id }) {
+            popped.remove(at: i)
         } else if let i = stack.firstIndex(where: { $0.id == id }) {
             removeCard(at: i)
         }
@@ -265,7 +323,7 @@ struct Desk: Equatable {
     /// touches `clarity`.
     private mutating func toggleClarity() {
         clarity.toggle()
-        for i in slots.indices where slots[i] != nil { slots[i]?.collapsed = clarity }
+        for i in popped.indices { popped[i].card.collapsed = clarity }
         for i in stack.indices { stack[i].collapsed = clarity }
     }
 
@@ -296,9 +354,8 @@ struct Desk: Equatable {
     }
 
     private mutating func update(_ id: CardID, _ change: (inout Card) -> Void) {
-        if let slot = slot(of: id), var card = slots[slot.index] {
-            change(&card)
-            slots[slot.index] = card
+        if let i = popped.firstIndex(where: { $0.card.id == id }) {
+            change(&popped[i].card)
         } else if let i = stack.firstIndex(where: { $0.id == id }) {
             change(&stack[i])
         }
@@ -344,11 +401,9 @@ struct StackFace: Equatable {
 }
 
 extension Desk {
-    /// The popped cards, in slot order.
-    func cardFaces(hasKey: Bool) -> [(slot: Slot, face: CardFace)] {
-        Slot.all.compactMap { slot in
-            slots[slot.index].map { (slot, Desk.face(of: $0, hasKey: hasKey)) }
-        }
+    /// The popped cards and where they are, in the order they arrived.
+    func cardFaces(hasKey: Bool) -> [(place: Place, face: CardFace)] {
+        popped.map { ($0.place, Desk.face(of: $0.card, hasKey: hasKey)) }
     }
 
     func stackFace(hasKey: Bool) -> StackFace {
@@ -422,8 +477,13 @@ enum Visibility: Equatable {
 /// The part of the desk that is not in the Markdown files. `Library` stores it as JSON in the
 /// hidden sidecar; `Desk.init(notes:saved:)` is the only reader and validates everything.
 struct SavedDesk: Codable, Equatable {
-    var version = 1
+    /// 2: 20 slots with the stack in one of them, free points. 1: 19 slots after the stack's
+    /// fixed top-left cell, so its slot numbers are one less.
+    var version = 2
     var clarity = false
+    /// The stack's place: `stackFree` if set, else `stackSlot`, else the top-left slot.
+    var stackSlot: Int?
+    var stackFree: GridPoint?
     var placements: [SavedPlacement] = []
     var stack: [CardID] = []
     var collapsed: [CardID] = []
@@ -431,9 +491,11 @@ struct SavedDesk: Codable, Equatable {
     var summaries: [SavedSummary] = []
 }
 
+/// A popped card's place: `free` if set, else `slot`.
 struct SavedPlacement: Codable, Equatable {
     /// `Slot.index`; validated on load, since the file is outside the type system.
-    var slot: Int
+    var slot: Int?
+    var free: GridPoint?
     var card: CardID
 }
 
@@ -449,9 +511,9 @@ extension Desk {
         let cards = allCards
         return SavedDesk(
             clarity: clarity,
-            placements: Slot.all.compactMap { slot in
-                slots[slot.index].map { SavedPlacement(slot: slot.index, card: $0.id) }
-            },
+            stackSlot: stackPlace.savedSlot,
+            stackFree: stackPlace.savedFree,
+            placements: popped.map { SavedPlacement(slot: $0.place.savedSlot, free: $0.place.savedFree, card: $0.card.id) },
             stack: stack.map(\.id),
             collapsed: cards.filter(\.collapsed).map(\.id).sorted(),
             summaries: cards.compactMap { card in
@@ -460,4 +522,9 @@ extension Desk {
             }
         )
     }
+}
+
+private extension Place {
+    var savedSlot: Int? { if case .slot(let slot) = self { slot.index } else { nil } }
+    var savedFree: GridPoint? { if case .free(let point) = self { point } else { nil } }
 }

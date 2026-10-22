@@ -1,19 +1,31 @@
 import AppKit
 
-/// The stack: its own card-sized window in the top-left grid cell, the app's control center.
-/// Same window behaviour as a card (borderless, normal layer, all Spaces), but it never moves
-/// and never hides: under Hide all it shrinks to its ribbon. Its selected card is edited in place.
+/// The stack: its own card-sized window, the app's control center. Same window behaviour as a
+/// card (borderless, normal layer, all Spaces), dragged by its ribbon instead of a header, and it
+/// never hides: under Hide all it shrinks to its ribbon. Its selected card is edited in place.
 final class StackWindow: NSWindow {
     private let stackView: StackView
     private let send: (Command) -> Void
     private var swipes = SwipeTracker()
+    /// The full card frame from the last `apply`, which the window is only the top of under Hide all.
+    private var cardFrame = CGRect.zero
 
-    init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu) {
+    init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu, drag: WindowDrag) {
         self.send = send
         stackView = StackView(send: send, menu: menu)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         configureAsCard(self)
         contentView = stackView
+        // A drag always reports the whole card, whose top edge is the ribbon's.
+        stackView.onRibbonPress = { [unowned self] event in
+            func card(_ frame: CGRect) -> CGRect {
+                CGRect(x: frame.minX, y: frame.maxY - self.cardFrame.height,
+                       width: self.cardFrame.width, height: self.cardFrame.height)
+            }
+            guard let frame = trackWindowDrag(from: event, in: self, moved: { drag.moved(card($0)) }) else { return false }
+            drag.dropped(card(frame))
+            return true
+        }
     }
 
     override var canBecomeKey: Bool { true }
@@ -44,9 +56,15 @@ final class StackWindow: NSWindow {
 
     /// `ribbonOnly` (Hide all) shrinks the window to the top of `cell` and hides the card area.
     func apply(_ face: StackFace, cell: CGRect, ribbonOnly: Bool) {
+        cardFrame = cell
         stackView.apply(face, showsCard: !ribbonOnly)
         let frame = ribbonOnly ? Self.ribbonOnlyFrame(in: cell) : cell
-        if self.frame != frame { setFrame(frame, display: true) }
+        guard self.frame != frame else { return }
+        if isVisible && self.frame.size == frame.size {
+            animator().setFrame(frame, display: true)   // snapping or sliding back on screen
+        } else {
+            setFrame(frame, display: true)
+        }
     }
 
     /// The ribbon and the gap around it, at the top of the stack's cell.
@@ -76,6 +94,8 @@ final class StackWindow: NSWindow {
 /// card: left/top the previous, right/bottom the next. Pop takes the selected card.
 /// The stack draws the card shape and the editing border; the `CardView` inside draws nothing.
 private final class StackView: NSView {
+    /// A press on the ribbon's empty space: true when it moved and dragged the window, false for a click.
+    var onRibbonPress: (NSEvent) -> Bool = { _ in false }
     private let send: (Command) -> Void
     private let toolbar = NSStackView()
     private let popButton: ActionButton
@@ -238,8 +258,20 @@ private final class StackView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// The ribbon's labels (badge, "Desktop full") and the toolbar's gaps are part of its
+    /// draggable empty space; only its buttons stay buttons.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        if let hit, !(hit is NSButton), ribbonRect.contains(convert(point, from: superview)) { return self }
+        return hit
+    }
+
+    /// The ribbon drags the window. A press anywhere that does not move is a click, which the
+    /// edge band under it, if any, turns into a flip.
     override func mouseDown(with event: NSEvent) {
-        if let edge = edge(at: convert(event.locationInWindow, from: nil)) {
+        let point = convert(event.locationInWindow, from: nil)
+        if ribbonRect.contains(point), onRibbonPress(event) { return }
+        if let edge = edge(at: point) {
             send(.flipStack(edge.direction))
         }
     }

@@ -10,19 +10,20 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - App home: menu bar icon with Show all / Hide all / Open stack / Quit. Global shortcut ⌥⌘C hides/shows every card.
 
 ## Hide all (revised 2026-10-22)
-- Hide all (menu bar icon, the stack's menu, or ⌥⌘C) hides every popped card and shrinks the stack to just its blue ribbon in the top-left slot. The ribbon never hides.
-- While hidden, the ribbon keeps New, Pop, Clarity, the count badge and the menu button; the menu offers Show all.
+- Hide all (menu bar icon, the stack's menu, or ⌥⌘C) hides every popped card, free ones included, and shrinks the stack to just its blue ribbon, at the top of wherever the stack is. The ribbon never hides.
+- While hidden, the ribbon keeps New, Pop, Clarity, the count badge and the menu button; the menu offers Show all. The ribbon can still be dragged.
 - Show all, ⌥⌘C, or opening the app again (Spotlight, Finder, Launchpad) while it runs brings back the stack's card area and every popped card, and brings the app forward.
-- New or Pop while hidden shows only that card; the rest stay hidden. Its slot is chosen as if the hidden cards were in place.
+- New or Pop while hidden shows only that card; the rest stay hidden. Its slot is chosen as if the hidden cards were in place, free ones included.
 - Hidden is not persisted: every launch starts with everything shown.
 
 ## Grid and sizing
 - Screen is an invisible 5 × 4 grid. Card width = screen width / 5; height = (screen height below menu bar) / 4.
-- 20 slots: 19 for cards, 1 (top-left) for the stack.
-- Recomputed when the display setup changes; cards re-snap to their slots.
+- 20 equal slots. The stack takes one (top-left by default), so at most 19 cards are on the desktop.
+- Recomputed when the display setup changes; snapped cards re-snap to their slots, free cards and a free stack keep their place as a fraction of the screen (revised 2026-10-22).
 
 ## Stack
-- Its own card-sized window in the top-left slot: the control center, marked by a sky-blue ribbon on top.
+- Its own card-sized window, top-left until you move it: the control center, marked by a sky-blue ribbon on top.
+- Moved like a card (see Moving cards and the stack), by pressing the ribbon's empty space and dragging. A click there that does not move still acts as the edge band under it.
 - Looks like one card: the ribbon holds the toolbar and a count badge; below it, the selected stacked card (header and body). No list or divider for the cards underneath.
 - Toolbar: New, Pop, Clarity on/off (global), and a menu button with Show all / Hide all / Settings… / Quit, so the control center works even when the menu bar icon is hidden.
 - The selected stacked card is a full card (revised 2026-10-22): edited in place exactly like a popped card (see Card content and editing), with the same per-card buttons except ↩ Stack, and collapsible to its summary (see Clarity mode).
@@ -31,12 +32,20 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - The count badge counts real cards only, never the blank page.
 
 ## Pop / return / find space
-- Pop takes the first grid slot (left→right, top→bottom) not occupied by another card. Other apps' windows are ignored.
-- All slots full → Pop refuses and the stack shows "Desktop full".
+- Pop takes the first grid slot (left→right, top→bottom) not taken by a card or the stack. A snapped card or stack takes its slot; a free one takes the slot it covers most. Other apps' windows are ignored.
+- No slot left, or 19 cards already on the desktop → Pop refuses and the stack shows "Desktop full".
 - Pop is disabled while the blank page shows.
 - Popping the card being edited on the stack moves the cursor with it; the stack then shows the next card.
-- Drag a card by its header; on release it snaps to the nearest slot, swapping with the occupant if any.
-- "↩ Stack" button returns a card to the top of the stack.
+- "↩ Stack" button returns a card to the top of the stack. It forgets where the card was; a later Pop takes the first free slot.
+
+## Moving cards and the stack (new 2026-10-22)
+- Drag a card by its header, or the stack by its ribbon's empty space.
+- While dragging, a guide outlines the slot nearest the dragged card's center: faint and dashed while a drop would stay free, solid and filled in once a drop would snap.
+- On release it snaps to that slot if its center is within 15% of a cell (in cell widths and heights) of the slot's center. Otherwise it stays exactly where it was dropped.
+- Snapping onto a slot held by another snapped card or the stack swaps them: the occupant goes to the dragged one's old place, a slot or an exact free spot. Free cards that only overlap the slot stay put.
+- Free cards overlap anything. The card being dragged comes to the front; clicking the app keeps the cards' front-to-back order.
+- A drop always ends fully on screen: a card dropped past an edge slides back in.
+- Free positions are saved, so they survive relaunch.
 
 ## Switching stacked cards (stack only; revised 2026-10-22)
 - Purpose: show the cards hidden under the stack.
@@ -79,10 +88,10 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 
 ## Storage
 - One Markdown (.md) file per card in ~/Documents/Cards/.
-- One hidden sidecar file for slot positions, stack order, collapsed state, and cached summaries.
+- One hidden sidecar file for positions (each card's and the stack's slot or free spot), stack order, collapsed state, and cached summaries.
 
 ## Look
 - Neutral light cards, thin border, soft shadow, system font. Per-card colors later.
 
 ## Explicitly out of scope for the prototype
-- Always-on-top mode, free-form placement, drag-to-stack, fonts/colors/sizes/tables/images/links, multiple stacks, sync, sharing.
+- Always-on-top mode, drag-to-stack, fonts/colors/sizes/tables/images/links, multiple stacks, sync, sharing.

@@ -39,7 +39,7 @@ func send(_ command: Command) {
 | File | What it owns |
 | --- | --- |
 | `Desk.swift` | the state, `Command`, every rule (pop, flip, swap, clarity, restore), and Hide all's `Visibility` |
-| `Grid.swift` | slot, frame and edge-band geometry (pure) |
+| `Grid.swift` | slots, free positions, the snap rule, frames and edge bands (pure) |
 | `Note.swift` | a card's content, its Markdown format, and the typing rules for lists |
 | `DeskController.swift` | the single owner of the desk and of every window |
 | `Library.swift` | `~/Documents/Cards/*.md` and the hidden sidecar `.cards.json` |
@@ -48,10 +48,15 @@ func send(_ command: Command) {
 | `StackWindow.swift`, `Swipe.swift` | the stack window; the rules that turn scroll events into flips (pure) |
 | `Settings.swift`, `App.swift` | API key and settings; entry point, menu bar, hotkey, reopen |
 
-- **Location is ownership.** A `Card` value lives inside its location: a slot entry or a stack
-  position. There is no id-to-card map to keep in step,
+- **Location is ownership.** A `Card` value lives inside its location: a desktop entry (with its
+  `Place`) or a stack position. There is no id-to-card map to keep in step,
   so "one card, one place" holds by construction, and a moving card carries its collapsed state
-  and summary with it. The stack's top-left cell is not a `Slot`, so no card can land on it.
+  and summary with it.
+- **A place is a slot or a free point.** `Place` is `.slot(Slot)` or `.free(GridPoint)`, the
+  center as a fraction of the screen, so a display change rescales free cards with no model
+  change. Cards and the stack both have one. `Place.dropped(at:)` is the whole snap rule (slide
+  on screen, then snap within 15 % of a cell), and the drag guide asks it the same question
+  while the pointer moves, so the guide can never promise a snap the drop won't make.
 - **The stack is a loop with one blank page.** `Desk.stack` is the stacked cards, top first,
   and `Desk.selection` is the loop position: an index into the stack, or `stack.count` for the
   blank page after the bottom card. Next and previous move the position and never reorder the
@@ -105,6 +110,10 @@ Later changes, after trying the app:
   rotating the stack, so the stack's order no longer changes when you browse it. Two-finger
   swipes switch cards; the edge bands stay as the click alternative. Clarity and summaries now
   cover stacked cards too, which reverses the Sonnet graft above. Hide all keeps the ribbon.
+- 2026-10-22, free placement: cards and the stack can be dropped anywhere, with a guide outlining
+  the slot a drop would snap to. The grid became 20 equal slots and the stack one more movable
+  item. Sidecar version 2 adds free points and the stack's place; version 1 files, whose slot
+  numbers skipped the stack's cell, are shifted by one on load.
 
 ## Tradeoffs accepted
 
@@ -140,3 +149,7 @@ Later changes, after trying the app:
 - With no API key, a collapsed card shows "Summary unavailable" with the reason on hover.
 - A collapsed card whose body is empty or one line shows that line in the lighter style.
 - The grid uses the menu-bar screen and does not subtract the Dock.
+- Free cards piled into one slot leave other slots untaken, so Pop also stops at 19 cards on the
+  desktop, keeping the old ceiling.
+- The guide window sits above the dragged card and ignores the mouse; a swap target shows the
+  same outline as an empty slot.

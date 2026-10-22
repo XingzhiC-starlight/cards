@@ -14,7 +14,10 @@ final class DeskController {
     private var visibility = Visibility.all
     /// One window per popped card, created on pop and closed when the card leaves the desktop.
     private var cardWindows: [CardID: CardWindow] = [:]
-    private lazy var stackWindow = StackWindow(send: { [unowned self] in self.send($0) }, menu: appMenu)
+    private lazy var stackWindow = StackWindow(send: { [unowned self] in self.send($0) }, menu: appMenu,
+                                               drag: windowDrag(.stack))
+    /// The outline of the slot a drag would snap to; visible only while something is dragged.
+    private let guide = SlotGuide()
     private lazy var summarizer = Summarizer(
         apiKey: { [unowned self] in self.keys.apiKey },
         deliver: { [unowned self] id, summary in self.send(.storeSummary(id, summary)) })
@@ -98,7 +101,8 @@ final class DeskController {
         if let notes = library.rescan() { send(.syncFiles(notes)) }
     }
 
-    /// `applicationDidChangeScreenParameters`: new geometry, same slots. Every card re-snaps.
+    /// `applicationDidChangeScreenParameters`: new geometry, same places. Snapped cards re-snap
+    /// and free ones keep their fraction of the screen.
     func screensChanged() {
         grid = Self.currentGrid() ?? grid
         render()
@@ -130,12 +134,12 @@ final class DeskController {
             window.close()
             cardWindows[id] = nil
         }
-        for (slot, face) in popped {
+        for (place, face) in popped {
             let window = cardWindows[face.id] ?? makeCardWindow(face.id)
-            window.apply(face, frame: grid.frame(of: slot))
+            window.apply(face, frame: grid.frame(of: place))
             setVisible(window, visibility.shows(face.id))
         }
-        stackWindow.apply(desk.stackFace(hasKey: keys.apiKey != nil), cell: grid.stackFrame,
+        stackWindow.apply(desk.stackFace(hasKey: keys.apiKey != nil), cell: grid.frame(of: desk.stackPlace),
                           ribbonOnly: !visibility.showsStackCard)
         setVisible(stackWindow, true)   // Hide all keeps the ribbon
     }
@@ -149,19 +153,41 @@ final class DeskController {
     }
 
     private func makeCardWindow(_ id: CardID) -> CardWindow {
-        let window = CardWindow(id: id,
-                                send: { [unowned self] in self.send($0) },
-                                slotNear: { [unowned self] in self.grid.nearestSlot(to: $0) })
+        let window = CardWindow(id: id, send: { [unowned self] in self.send($0) }, drag: windowDrag(.card(id)))
         cardWindows[id] = window
         return window
     }
 
+    /// A drag of `item`'s window: the guide follows it, and the drop asks `Place.dropped(at:)`,
+    /// the same rule the guide shows, where it lands. A drop that changes nothing still renders,
+    /// which puts the window back on its place.
+    private func windowDrag(_ item: Movable) -> WindowDrag {
+        WindowDrag(
+            moved: { [unowned self] frame in
+                let target = Place.guide(at: center(of: frame))
+                guide.show(grid.frame(of: target.slot), snaps: target.snaps)
+            },
+            dropped: { [unowned self] frame in
+                guide.hide()
+                send(.move(item, to: Place.dropped(at: center(of: frame))))
+            })
+    }
+
+    private func center(of frame: CGRect) -> GridPoint {
+        grid.point(at: CGPoint(x: frame.midX, y: frame.midY))
+    }
+
     /// macOS brings forward only the clicked window when an app activates. Cards are one group,
-    /// so order the stack and every visible card front, then the key window last so it stays on
-    /// top. Another app's click needs no code: its window simply comes in front of ours.
+    /// so order the stack and every visible card front, back to front so overlapping cards keep
+    /// their order, then the key window last so it stays on top. Another app's click needs no
+    /// code: its window simply comes in front of ours.
     private func raiseGroup() {
-        stackWindow.orderFront(nil)
-        for window in cardWindows.values where window.isVisible { window.orderFront(nil) }
+        let frontToBack = NSWindow.windowNumbers(options: [.allSpaces]) ?? []
+        let depth = Dictionary(frontToBack.enumerated().map { ($1.intValue, $0) }, uniquingKeysWith: min)
+        let group: [NSWindow] = [stackWindow] + Array(cardWindows.values)
+        for window in group.filter(\.isVisible).sorted(by: { depth[$0.windowNumber, default: .max] > depth[$1.windowNumber, default: .max] }) {
+            window.orderFront(nil)
+        }
         NSApp.keyWindow?.orderFront(nil)
     }
 

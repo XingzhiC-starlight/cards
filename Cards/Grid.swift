@@ -1,25 +1,22 @@
 import AppKit
 
-// Screen geometry as pure functions: slots, frames, nearest-slot snapping, edge bands.
+// Screen geometry as pure functions: slots, free positions, snapping, frames, edge bands.
 
-/// One of the 19 card cells of the invisible 5 × 4 grid, numbered in pop order
-/// (left → right, top → bottom). The top-left cell belongs to the stack and is not a `Slot`,
-/// so no transition can ever put a card there.
+/// One of the 20 cells of the invisible 5 × 4 grid, numbered in pop order (left → right,
+/// top → bottom). The stack takes one like a card does, top-left until it is moved.
 struct Slot: Hashable, Comparable {
     static let columns = 5
     static let rows = 4
-    static let count = columns * rows - 1
+    static let count = columns * rows
     /// Every slot in pop order; `Desk.firstFreeSlot` takes the first free one.
     static let all: [Slot] = (0..<count).map { Slot(unchecked: $0) }
 
-    /// 0..<19 in reading order, skipping the stack's cell.
+    /// 0..<20 in reading order.
     let index: Int
-    /// The grid cell, 1..<20 in reading order; cell 0 is the stack's.
-    private var cell: Int { index + 1 }
-    var column: Int { cell % Slot.columns }
-    var row: Int { cell / Slot.columns }
+    var column: Int { index % Slot.columns }
+    var row: Int { index / Slot.columns }
 
-    /// Boundary initializer for sidecar data: nil outside 0..<19.
+    /// Boundary initializer for sidecar data: nil outside 0..<20.
     init?(index: Int) {
         guard (0..<Slot.count).contains(index) else { return nil }
         self.index = index
@@ -27,11 +24,78 @@ struct Slot: Hashable, Comparable {
 
     private init(unchecked index: Int) { self.index = index }
 
+    /// The cell containing `point`. A card is exactly one cell in size, so this is also the cell
+    /// a card centered at `point` covers most, and the one whose center is nearest.
+    init(containing point: GridPoint) {
+        let column = min(Int(point.x * Double(Slot.columns)), Slot.columns - 1)
+        let row = min(Int(point.y * Double(Slot.rows)), Slot.rows - 1)
+        index = row * Slot.columns + column
+    }
+
+    /// The cell's center.
+    var center: GridPoint {
+        GridPoint(x: (Double(column) + 0.5) / Double(Slot.columns), y: (Double(row) + 0.5) / Double(Slot.rows))
+    }
+
     static func < (a: Slot, b: Slot) -> Bool { a.index < b.index }
 }
 
-/// Grid geometry for one screen. The desk stores slots, never frames, so a display change is a
-/// new `Grid` plus a re-render: every card re-snaps to its slot with no model change.
+/// The center of a card-sized item as a fraction of the grid area, from the top-left (x right,
+/// y down), so a display change rescales it with no model change. Always far enough from the
+/// edges that the whole item is on screen: every initializer clamps, the decoder included.
+struct GridPoint: Hashable, Codable {
+    let x: Double
+    let y: Double
+
+    init(x: Double, y: Double) {
+        let halfWidth = 0.5 / Double(Slot.columns)
+        let halfHeight = 0.5 / Double(Slot.rows)
+        self.x = x.isFinite ? min(max(x, halfWidth), 1 - halfWidth) : 0.5
+        self.y = y.isFinite ? min(max(y, halfHeight), 1 - halfHeight) : 0.5
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(x: try c.decode(Double.self, forKey: .x), y: try c.decode(Double.self, forKey: .y))
+    }
+}
+
+/// Where a card or the stack is on the desktop: snapped to a slot, or free at a point.
+enum Place: Hashable {
+    case slot(Slot)
+    case free(GridPoint)
+
+    /// How close a drop must land to a slot's center to snap: 15 % of a cell, measured in cell
+    /// widths and heights.
+    static let snapDistance = 0.15
+
+    /// The slot this place takes for Pop: its own slot, or the one a free item covers most.
+    var slot: Slot {
+        switch self {
+        case .slot(let slot): slot
+        case .free(let point): Slot(containing: point)
+        }
+    }
+
+    /// What the drag guide shows for an item centered at `point`: the slot a drop there would
+    /// snap to, and whether it would.
+    static func guide(at point: GridPoint) -> (slot: Slot, snaps: Bool) {
+        let slot = Slot(containing: point)
+        let dx = (point.x - slot.center.x) * Double(Slot.columns)
+        let dy = (point.y - slot.center.y) * Double(Slot.rows)
+        return (slot, hypot(dx, dy) <= snapDistance)
+    }
+
+    /// Where an item dropped with its center at `point` lands: slid fully on screen, then snapped
+    /// to the nearest slot if close enough, otherwise free right there.
+    static func dropped(at point: GridPoint) -> Place {
+        let guide = guide(at: point)
+        return guide.snaps ? .slot(guide.slot) : .free(point)
+    }
+}
+
+/// Grid geometry for one screen. The desk stores places, never frames, so a display change is a
+/// new `Grid` plus a re-render: every card goes back to its place with no model change.
 struct Grid: Equatable {
     /// The screen below the menu bar, in AppKit screen coordinates (origin bottom-left, y up).
     let area: CGRect
@@ -49,19 +113,23 @@ struct Grid: Equatable {
 
     func frame(of slot: Slot) -> CGRect { cell(column: slot.column, row: slot.row) }
 
-    /// The stack lives in the top-left cell.
-    var stackFrame: CGRect { cell(column: 0, row: 0) }
+    func frame(of place: Place) -> CGRect {
+        switch place {
+        case .slot(let slot):
+            return frame(of: slot)
+        case .free(let point):
+            let w = area.width / CGFloat(Slot.columns)
+            let h = area.height / CGFloat(Slot.rows)
+            let midX = area.minX + CGFloat(point.x) * area.width
+            let midY = area.maxY - CGFloat(point.y) * area.height
+            return CGRect(x: (midX - w / 2).rounded(), y: (midY - h / 2).rounded(), width: w.rounded(), height: h.rounded())
+        }
+    }
 
-    /// The slot whose center is nearest `point` (a dropped card's center). Never the stack cell,
-    /// because the stack cell is not a `Slot`.
-    func nearestSlot(to point: CGPoint) -> Slot {
-        func distance(_ slot: Slot) -> CGFloat {
-            let f = frame(of: slot)
-            return hypot(f.midX - point.x, f.midY - point.y)
-        }
-        return Slot.all.dropFirst().reduce(Slot.all[0]) { best, slot in
-            distance(slot) < distance(best) ? slot : best
-        }
+    /// `screenPoint` (a dragged window's center) as a grid point, clamped on screen.
+    func point(at screenPoint: CGPoint) -> GridPoint {
+        GridPoint(x: Double((screenPoint.x - area.minX) / area.width),
+                  y: Double((area.maxY - screenPoint.y) / area.height))
     }
 
     /// Edges are rounded to whole points and shared with the neighbour, so cells tile the area

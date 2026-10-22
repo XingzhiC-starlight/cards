@@ -7,9 +7,9 @@ final class CardWindow: NSWindow {
     let cardID: CardID
     private let cardView: CardView
 
-    init(id: CardID, send: @escaping (Command) -> Void, slotNear: @escaping (CGPoint) -> Slot) {
+    init(id: CardID, send: @escaping (Command) -> Void, drag: WindowDrag) {
         cardID = id
-        cardView = CardView(home: .desktop(slotNear: slotNear), send: send)
+        cardView = CardView(home: .desktop(drag), send: send)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         configureAsCard(self)
         contentView = cardView
@@ -91,11 +91,11 @@ enum CardShape {
 /// On the stack the view shows one card at a time: `apply` re-points it at the selected card, or
 /// at nil for the blank page, whose first typed character becomes a card (`Command.writeBlank`).
 final class CardView: NSView {
-    /// Where the card lives. A desktop card draws itself and can be dragged to another slot. A
+    /// Where the card lives. A desktop card draws itself and can be dragged anywhere. A
     /// stacked card is drawn by the `StackView` around it, which also draws the editing border,
     /// and cannot be dragged or returned to the stack.
     enum Home {
-        case desktop(slotNear: (CGPoint) -> Slot)
+        case desktop(WindowDrag)
         case stack
     }
 
@@ -323,11 +323,11 @@ final class CardView: NSView {
         }
     }
 
-    /// Header press: drag and snap if the pointer moves; report a plain click otherwise.
+    /// Header press: drag the window if the pointer moves; report a plain click otherwise.
     private func dragIfMoved(_ event: NSEvent) -> Bool {
-        guard case .desktop(let slotNear) = home, let id = face?.id, let window,
-              let center = trackWindowDrag(from: event, in: window) else { return false }
-        send(.move(id, to: slotNear(center)))   // same slot → no model change; render snaps it back
+        guard case .desktop(let drag) = home, let window,
+              let frame = trackWindowDrag(from: event, in: window, moved: drag.moved) else { return false }
+        drag.dropped(frame)
         return true
     }
 
@@ -345,22 +345,31 @@ final class CardView: NSView {
     }
 }
 
+/// What a window drag reports, in screen coordinates: every move while it lasts (for the guide)
+/// and the frame it was released at. The controller decides where that lands.
+struct WindowDrag {
+    let moved: (CGRect) -> Void
+    let dropped: (CGRect) -> Void
+}
+
 /// Click or drag? Decided without stealing the click.
 ///
 /// Peeks at the next mouse event *without dequeuing it*. If the button comes up before the
 /// pointer has moved `threshold` points, this returns nil and the mouse-up is still in the
 /// queue, so the caller can pass the original mouse-down to `NSTextView`, whose own tracking
 /// loop then sees that mouse-up and places the caret. Once the pointer passes the threshold the
-/// press is a window drag: the window follows the pointer until mouse-up and the function returns
-/// the window's final center (screen coordinates) for snapping. Multi-clicks are never drags,
-/// so double-click still selects a word in the header.
-func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CGFloat = 4) -> CGPoint? {
+/// press is a window drag: the window comes to the front and follows the pointer until mouse-up,
+/// `moved` hears each new frame, and the function returns the window's final frame. Multi-clicks
+/// are never drags, so double-click still selects a word in the header.
+func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CGFloat = 4,
+                     moved: (CGRect) -> Void) -> CGRect? {
     guard mouseDown.clickCount == 1 else { return nil }
     let start = screenLocation(of: mouseDown)
     let origin = window.frame.origin
     func follow(_ event: NSEvent) {
         let now = screenLocation(of: event)
         window.setFrameOrigin(NSPoint(x: origin.x + now.x - start.x, y: origin.y + now.y - start.y))
+        moved(window.frame)
     }
     var dragging = false
     while let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp],
@@ -369,7 +378,7 @@ func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CG
             guard dragging else { return nil }                 // a click: leave the mouse-up queued
             _ = window.nextEvent(matching: .leftMouseUp)       // consume it: the drag is over
             follow(event)                                      // a quick flick can release further on
-            return CGPoint(x: window.frame.midX, y: window.frame.midY)
+            return window.frame
         }
         _ = window.nextEvent(matching: .leftMouseDragged)      // consume the drag we peeked at
         let now = screenLocation(of: event)
@@ -378,7 +387,7 @@ func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CG
         dragging = true
         follow(event)
     }
-    return nil
+    return dragging ? window.frame : nil
 }
 
 /// Where a mouse event happened, in screen coordinates. Taken from the event itself rather than
@@ -388,6 +397,53 @@ private func screenLocation(of event: NSEvent) -> CGPoint {
         return NSEvent.mouseLocation
     }
     return CGPoint(x: location.x, y: primary.frame.maxY - location.y)   // CG's origin is top-left
+}
+
+/// The drag guide: an outline of the slot a drop would snap to, faint and dashed while the drop
+/// would stay free, solid and filled once it would snap. Shown only during a drag, just above
+/// the dragged window, and never takes the mouse.
+final class SlotGuide: NSWindow {
+    private let outline = GuideView()
+
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
+        isReleasedWhenClosed = false
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        contentView = outline
+    }
+
+    func show(_ frame: CGRect, snaps: Bool) {
+        if self.frame != frame { setFrame(frame, display: false) }
+        outline.snaps = snaps
+        if !isVisible { orderFront(nil) }   // the dragged window came forward first
+    }
+
+    func hide() { orderOut(nil) }
+
+    private final class GuideView: NSView {
+        var snaps = false {
+            didSet { if snaps != oldValue { needsDisplay = true } }
+        }
+
+        override func draw(_ dirtyRect: NSRect) {
+            let lineWidth: CGFloat = snaps ? 2.5 : 1.5
+            let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
+            if snaps {
+                NSColor.controlAccentColor.withAlphaComponent(0.10).setFill()
+                shape.fill()
+                NSColor.controlAccentColor.withAlphaComponent(0.9).setStroke()
+            } else {
+                NSColor(white: 0, alpha: 0.35).setStroke()
+                shape.setLineDash([6, 4], count: 2, phase: 0)
+            }
+            shape.lineWidth = lineWidth
+            shape.stroke()
+        }
+    }
 }
 
 /// A collapsed card's body: two lines of lighter summary text, a small spinner, or
