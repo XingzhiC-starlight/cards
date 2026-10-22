@@ -17,9 +17,8 @@ Cards is a menu bar app, so it has no Dock icon. Look for the stacked-rectangles
 bar: it has Show All, Hide All, Open Stack, Settings… and Quit. **⌥⌘C** hides or shows every card
 from anywhere.
 
-On a MacBook with a crowded menu bar, macOS may hide the icon behind the camera notch. Everything
-in its menu still works without it: ⌥⌘C shows or hides the cards, and after clicking a card,
-**⌘,** opens Settings and **⌘Q** quits.
+On a MacBook with a crowded menu bar, macOS may hide the icon behind the camera notch. The same
+menu is on the stack: click **⋯** at the right of its blue ribbon.
 
 ## Build from the command line
 
@@ -33,8 +32,8 @@ open build/DerivedData/Build/Products/Debug/Cards.app
 
 ## Where to paste the API key
 
-Summaries use the Anthropic API (model `claude-haiku-5-5`). Click the menu bar icon, choose
-**Settings…**, paste your key into **Anthropic API key**, and click **Save**.
+Summaries use the Anthropic API (model `claude-haiku-5-5`). Click the menu bar icon (or **⋯** on
+the stack's blue ribbon), choose **Settings…**, paste your key into **Anthropic API key**, and click **Save**.
 
 The key is stored in your login Keychain (service "Cards"), never in the project or the notes
 folder. Without a key everything works; collapsed cards just say "Summary unavailable". Debug

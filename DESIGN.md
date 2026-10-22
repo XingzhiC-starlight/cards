@@ -84,6 +84,8 @@ Later changes, after trying the app:
   stack itself is now the loop.
 - The stack moved to the top-left cell and looks like one card: a sky-blue ribbon (the control
   center) above the selected card, with no list of the cards underneath.
+- The stack's ribbon has a menu button with the menu bar icon's menu (one builder,
+  `AppDelegate.makeAppMenu`), because a crowded menu bar can hide the icon behind the notch.
 - Hover follows the pointer's real position (one mouse-move monitor in `DeskController`) instead
   of per-view enter/exit events, which a fast pointer can skip.
 

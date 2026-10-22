@@ -6,8 +6,8 @@ import AppKit
 final class StackWindow: NSWindow {
     private let stackView: StackView
 
-    init(send: @escaping (Command) -> Void) {
-        stackView = StackView(send: send)
+    init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu) {
+        stackView = StackView(send: send, menu: menu)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         configureAsCard(self)
         contentView = stackView
@@ -26,8 +26,8 @@ final class StackWindow: NSWindow {
     }
 }
 
-/// Looks like one card: a sky-blue ribbon with the toolbar (New, Pop, Clarity), "Desktop full"
-/// and the count badge, above the selected stacked card. The window's margin is four invisible
+/// Looks like one card: a sky-blue ribbon with the toolbar (New, Pop, Clarity), "Desktop full",
+/// the count badge and the app menu button, above the selected stacked card. The window's margin is four invisible
 /// edge bands that select another stacked card: left/top the previous, right/bottom the next.
 /// Pop takes the selected card.
 private final class StackView: NSView {
@@ -35,6 +35,7 @@ private final class StackView: NSView {
     private let toolbar = NSStackView()
     private let popButton: ActionButton
     private let clarityButton: ActionButton
+    private let menuButton = ActionButton(symbol: "ellipsis.circle", help: "Show all, hide all, settings and quit")
     private let preview = CardTextView()
     private let previewClip = PassThroughView()
     private let emptyLabel = NSTextField(labelWithString: "Stack is empty")
@@ -49,7 +50,7 @@ private final class StackView: NSView {
     static let ribbon = NSColor(srgbRed: 0.56, green: 0.80, blue: 0.98, alpha: 1)
     static let ribbonText = NSColor(srgbRed: 0.04, green: 0.21, blue: 0.37, alpha: 1)
 
-    init(send: @escaping (Command) -> Void) {
+    init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu) {
         self.send = send
         popButton = ActionButton(title: "Pop", help: "Bring the selected card out") { send(.pop(nil)) }
         clarityButton = ActionButton(title: "Clarity: Off", help: "Collapse or expand every card") { send(.toggleClarity) }
@@ -63,6 +64,13 @@ private final class StackView: NSView {
         }
         toolbar.spacing = 14
         addSubview(toolbar)
+
+        menuButton.contentTintColor = Self.ribbonText
+        menuButton.handler = { [unowned menuButton] in
+            // Drops down from the button, like a menu bar menu (the button view is flipped).
+            menu().popUp(positioning: nil, at: NSPoint(x: 0, y: menuButton.bounds.maxY + 4), in: menuButton)
+        }
+        addSubview(menuButton)
 
         preview.isEditable = false
         preview.isSelectable = false
@@ -129,8 +137,9 @@ private final class StackView: NSView {
         let inner = content
         let ribbonMid = ribbonRect.minY + Self.ribbonHeight / 2
         toolbar.frame = NSRect(x: inner.minX, y: ribbonMid - 11, width: inner.width * 0.6, height: 20)
+        menuButton.frame = NSRect(x: inner.maxX - 18, y: ribbonMid - 10, width: 18, height: 18)
         let badgeWidth = max(22, badge.fittingSize.width + 10)
-        badge.frame = NSRect(x: inner.maxX - badgeWidth, y: ribbonMid - 9.5, width: badgeWidth, height: 17)
+        badge.frame = NSRect(x: menuButton.frame.minX - 8 - badgeWidth, y: ribbonMid - 9.5, width: badgeWidth, height: 17)
         let fullWidth = fullLabel.fittingSize.width
         fullLabel.frame = NSRect(x: badge.frame.minX - 8 - fullWidth, y: ribbonMid - 9, width: fullWidth, height: 15)
         let cardTop = ribbonRect.minY - 8

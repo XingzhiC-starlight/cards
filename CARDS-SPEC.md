@@ -17,7 +17,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 ## Stack
 - Its own card-sized window in the top-left slot: the control center, marked by a sky-blue ribbon on top.
 - Looks like one card: the ribbon holds the toolbar and a count badge; below it, the selected stacked card (header and body). No list or divider for the cards underneath.
-- Toolbar: New, Pop, Clarity on/off (global).
+- Toolbar: New, Pop, Clarity on/off (global), and a menu button with Show all / Hide all / Settings… / Quit, so the control center works even when the menu bar icon is hidden.
 
 ## Pop / return / find space
 - Pop takes the first grid slot (left→right, top→bottom) not occupied by another card. Other apps' windows are ignored.

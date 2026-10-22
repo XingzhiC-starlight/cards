@@ -27,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `-CardsFolder <path>` on the command line points the app at another folder (for trying
         // things out without touching ~/Documents/Cards).
         let folder = UserDefaults.standard.string(forKey: "CardsFolder").map { URL(filePath: $0, directoryHint: .isDirectory) }
-        let controller = DeskController(library: Library(folder: folder ?? Library.defaultFolder), keys: keys)
+        let controller = DeskController(library: Library(folder: folder ?? Library.defaultFolder), keys: keys,
+                                        appMenu: { [unowned self] in self.makeAppMenu(includingOpenStack: false) })
         self.controller = controller
         statusItem = makeStatusItem()
         hotKey = HotKey(keyCode: kVK_ANSI_C, modifiers: optionKey | cmdKey) { controller.toggleHidden() }
@@ -39,20 +40,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) { controller?.flush() }
     func applicationDidChangeScreenParameters(_ notification: Notification) { controller?.screensChanged() }
 
-    /// Menu bar icon: Show all / Hide all / Open stack / Settings… / Quit.
+    /// Menu bar icon. A crowded menu bar can hide it behind the notch, so the stack's ribbon
+    /// offers the same menu.
     private func makeStatusItem() -> NSStatusItem {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: "Cards")
+        item.menu = makeAppMenu(includingOpenStack: true)
+        return item
+    }
+
+    /// The app's menu: Show all / Hide all / Open stack / Settings… / Quit. The one list for both
+    /// the menu bar icon and the stack's ribbon button, which leaves out Open stack.
+    private func makeAppMenu(includingOpenStack: Bool) -> NSMenu {
         let menu = NSMenu()
         menu.addItem(withTitle: "Show All", action: #selector(showAll), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Hide All", action: #selector(hideAll), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Open Stack", action: #selector(openStack), keyEquivalent: "").target = self
+        if includingOpenStack {
+            menu.addItem(withTitle: "Open Stack", action: #selector(openStack), keyEquivalent: "").target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Cards", action: #selector(quit), keyEquivalent: "").target = self
-        item.menu = menu
-        return item
+        return menu
     }
 
     /// Never shown (accessory apps have no menu bar), but key equivalents still route through it:

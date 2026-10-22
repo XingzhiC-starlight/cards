@@ -14,18 +14,21 @@ final class DeskController {
     private var hidden = false
     /// One window per popped card, created on pop and closed when the card leaves the desktop.
     private var cardWindows: [CardID: CardWindow] = [:]
-    private lazy var stackWindow = StackWindow(send: { [unowned self] in self.send($0) })
+    private lazy var stackWindow = StackWindow(send: { [unowned self] in self.send($0) }, menu: appMenu)
     private lazy var summarizer = Summarizer(
         apiKey: { [unowned self] in self.keys.apiKey },
         deliver: { [unowned self] id, summary in self.send(.storeSummary(id, summary)) })
     private let library: Library
     private let keys: KeyStore
+    /// The app's menu (Show all, Hide all, Settings…, Quit) for the stack's ribbon button.
+    private let appMenu: () -> NSMenu
     private var pendingSave: Task<Void, Never>?
     private var pointerMonitors: [Any] = []
 
-    init(library: Library, keys: KeyStore) {
+    init(library: Library, keys: KeyStore, appMenu: @escaping () -> NSMenu) {
         self.library = library
         self.keys = keys
+        self.appMenu = appMenu
         desk = library.load()
         grid = Self.currentGrid() ?? Grid(area: CGRect(x: 0, y: 0, width: 1512, height: 949))
         summarizer.sync(desk.poppedCards, typing: nil)
