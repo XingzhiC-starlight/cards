@@ -6,7 +6,9 @@ import Foundation
 ///
 /// Saves are a projection of the desk, never a log of edits: `save` compares the desk with what
 /// it last read or wrote and applies only the difference. So a crash, a double save or an
-/// outside edit can't leave the folder in a state the next save doesn't repair.
+/// outside edit can't leave the folder in a state the next save doesn't repair. `save` also
+/// reports whether the folder now matches the desk, so a caller never mistakes a failed write
+/// for a folder that is merely behind.
 final class Library {
     static let defaultFolder = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Documents/Cards", directoryHint: .isDirectory)
@@ -42,13 +44,28 @@ final class Library {
         return Desk(notes: notes, saved: saved)
     }
 
-    /// Makes the folder match `desk`:
+    /// Makes the folder match `desk` and returns whether it now does:
+    /// - a missing folder (deleted or unmounted since `load`) → create it and forget the snapshot,
+    ///   which no longer describes the disk, so every card and the sidecar are written again;
     /// - a card whose note differs from `notesOnDisk` (or is new) → write `<id>.md` atomically;
     /// - an id in `notesOnDisk` the desk no longer has → move that file to the Trash
     ///   (recoverable; a file already gone is fine);
     /// - `desk.saved != savedOnDisk` → write the sidecar atomically.
-    /// Each successful step updates the snapshot; a failed one leaves it, so the next save retries.
-    func save(_ desk: Desk) {
+    /// Each successful step updates the snapshot; a failed one leaves it, so the next save retries,
+    /// and the result is false.
+    @discardableResult
+    func save(_ desk: Desk) -> Bool {
+        if !FileManager.default.fileExists(atPath: folder.path) {
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            } catch {
+                log("Could not create \(folder.path): \(error.localizedDescription)")
+                return false
+            }
+            notesOnDisk = [:]
+            savedOnDisk = nil
+        }
+        var matches = true
         let current = Dictionary(desk.allCards.map { ($0.id, $0.note) }, uniquingKeysWith: { first, _ in first })
         for (id, note) in current where notesOnDisk[id] != note {
             do {
@@ -56,6 +73,7 @@ final class Library {
                 notesOnDisk[id] = note
             } catch {
                 log("Could not save \(id.rawValue).md: \(error.localizedDescription)")
+                matches = false
             }
         }
         for id in notesOnDisk.keys where current[id] == nil {
@@ -65,6 +83,7 @@ final class Library {
                     try FileManager.default.trashItem(at: file, resultingItemURL: nil)
                 } catch {
                     log("Could not move \(id.rawValue).md to the Trash: \(error.localizedDescription)")
+                    matches = false
                     continue
                 }
             }
@@ -77,8 +96,10 @@ final class Library {
                 savedOnDisk = saved
             } catch {
                 log("Could not save the sidecar: \(error.localizedDescription)")
+                matches = false
             }
         }
+        return matches
     }
 
     /// Re-reads the card files to pick up files added, removed or edited outside the app. Not the

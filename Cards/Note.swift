@@ -146,7 +146,9 @@ extension Note {
             let content = line.runs.map { Note.renderInline($0) }.joined()
             switch line.kind {
             case .text: out.append(Note.escapeLineStart(content))
-            case .bullet: out.append("- " + content)
+            case .bullet:
+                let readsAsCheckbox = Note.checkboxes.contains { content.hasPrefix($0.marker) }
+                out.append("- " + (readsAsCheckbox ? "\\" : "") + content)
             case .numbered: out.append("\(number ?? 1). " + content)
             case .todo(let done): out.append((done ? "- [x] " : "- [ ] ") + content)
             }
@@ -156,10 +158,11 @@ extension Note {
 
     // MARK: Line prefixes
 
+    private static let checkboxes: [(marker: String, done: Bool)] = [("[ ] ", false), ("[x] ", true), ("[X] ", true)]
+
     private static func lineKind(of line: Substring) -> (LineKind, Substring) {
-        for (prefix, kind) in [("- [ ] ", LineKind.todo(done: false)), ("- [x] ", .todo(done: true)),
-                               ("- [X] ", .todo(done: true)), ("- ", .bullet), ("* ", .bullet)]
-        where line.hasPrefix(prefix) {
+        let todos = checkboxes.map { ("- " + $0.marker, LineKind.todo(done: $0.done)) }
+        for (prefix, kind) in todos + [("- ", .bullet), ("* ", .bullet)] where line.hasPrefix(prefix) {
             return (kind, line.dropFirst(prefix.count))
         }
         let digits = line.prefix { $0.isASCII && $0.isNumber }

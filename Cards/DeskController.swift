@@ -23,6 +23,7 @@ final class DeskController {
     /// The app's menu (Show all, Hide all, Settings…, Quit) for the stack's ribbon button.
     private let appMenu: () -> NSMenu
     private var pendingSave: Task<Void, Never>?
+    private var saveFailing = false
     private var pointerMonitors: [Any] = []
 
     init(library: Library, keys: KeyStore, appMenu: @escaping () -> NSMenu) {
@@ -75,7 +76,8 @@ final class DeskController {
     /// Raises the whole group, then picks up outside changes to the folder.
     func appDidBecomeActive() {
         raiseGroup()
-        flush()
+        // A rescan after a failed save would replace the unsaved edits with the stale files.
+        guard flush() else { return }
         if let notes = library.rescan() { send(.syncFiles(notes)) }
     }
 
@@ -91,10 +93,11 @@ final class DeskController {
         render()
     }
 
-    /// Save now: on deactivate, quit, and before a rescan.
-    func flush() {
+    /// Save now: on deactivate, quit, and before a rescan. False when the folder doesn't match the desk.
+    @discardableResult
+    func flush() -> Bool {
         pendingSave?.cancel()
-        library.save(desk)
+        return saveNow()
     }
 
     // MARK: Derived side effects
@@ -172,8 +175,24 @@ final class DeskController {
         pendingSave = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
             guard let self, !Task.isCancelled else { return }
-            self.library.save(self.desk)
+            _ = self.saveNow()
         }
+    }
+
+    private func saveNow() -> Bool {
+        let saved = library.save(desk)
+        let firstFailure = !saved && !saveFailing
+        saveFailing = !saved   // before the alert: its modal loop can deliver another save
+        if firstFailure {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Cards can't save your notes"
+            alert.informativeText = "Cards couldn't write to \(library.folder.path). "
+                + "Your cards stay in memory until a save succeeds."
+            NSApp.activate()
+            alert.runModal()
+        }
+        return saved
     }
 
     /// The menu-bar screen.
