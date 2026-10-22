@@ -21,8 +21,7 @@ struct Card: Equatable {
     var note: Note { didSet { digest = note.digest } }
     /// Fingerprint of `note`. Kept in step by `note`'s observer, never assigned anywhere else.
     private(set) var digest: Digest
-    /// The clarity state this card last had: the "last state" a pop restores when global
-    /// clarity is off.
+    /// The card's own clarity state. It travels with the card, so a popped card keeps it.
     var collapsed: Bool
     /// The latest summary attempt. It describes the current note only while
     /// `summary.source == digest`; a stale one is simply ignored, never cleared.
@@ -59,14 +58,17 @@ enum Direction: Equatable {
 /// Every way the state can change. Views, the summarizer and the folder rescan all send these to
 /// `DeskController.send`; nothing else mutates a `Desk`.
 enum Command {
-    /// Stack toolbar "New": a blank card, popped straight out, expanded, focused.
+    /// Stack toolbar "New": a blank card, popped straight out, expanded, focused. On a full
+    /// desktop it creates nothing and the stack shows its blank page instead.
     case new(at: Date)
-    /// Stack toolbar "Pop" (nil = top card) or a click on a header in the stack list.
-    case pop(CardID?)
-    /// Per-card "↩ Stack" button: the card goes to the top of the stack.
+    /// Stack toolbar "Pop": the selected stacked card. Nothing while the blank page shows.
+    case pop
+    /// Per-card "↩ Stack" button: the card goes to the top of the stack, and the stack shows it.
     case returnToStack(CardID)
-    /// Click in one of the stack's edge bands: flip through the stacked cards.
+    /// Click in one of the stack's edge bands or a two-finger swipe: move around the stack's loop.
     case flipStack(Direction)
+    /// The first character typed on the stack's blank page. Only meaningful while it shows.
+    case writeBlank(Note, at: Date)
     /// Header drag released over `Slot`; swaps with the occupant, if any.
     case move(CardID, to: Slot)
     /// Trash button, after the user confirmed "Delete this card?".
@@ -92,17 +94,23 @@ enum Command {
 
 // MARK: - Desk
 
-/// The single source of truth: which card is in which slot, the stack order, global clarity,
-/// and (inside each `Card`) content, collapsed state and summary.
+/// The single source of truth: which card is in which slot, the stack order, which stack page
+/// shows, global clarity, and (inside each `Card`) content, collapsed state and summary.
 ///
 /// Invariants, all kept by construction in this file:
 /// - every card is in exactly one place (one slot cell or one stack position);
-/// - `slots.count == Slot.count`, so the stack's top-left cell can never hold a card.
+/// - `slots.count == Slot.count`, so the stack's top-left cell can never hold a card;
+/// - `selection` is in `0...stack.count`.
 struct Desk: Equatable {
     /// Indexed by `Slot.index`.
     private(set) var slots: [Card?]
-    /// Top card first.
+    /// Top card first. Its order changes only when a card enters or leaves, never on a flip.
     private(set) var stack: [Card]
+    /// The stack's loop position: the stacked card that shows, or `stack.count` for the blank
+    /// page that closes the loop. Not persisted: a launch shows the top card (the blank page
+    /// when the stack is empty). Every insert into or removal from `stack` goes through
+    /// `insertCard` / `removeCard`, which keep it on the same page.
+    private(set) var selection: Int
     /// Global clarity (the stack's Clarity button). Per-card state is `Card.collapsed`.
     private(set) var clarity: Bool
 
@@ -134,6 +142,7 @@ struct Desk: Equatable {
         }
         self.slots = slots
         self.stack = stack
+        self.selection = 0
         self.clarity = saved.clarity
     }
 
@@ -143,6 +152,9 @@ struct Desk: Equatable {
     var firstFreeSlot: Slot? { Slot.all.first { slots[$0.index] == nil } }
 
     var allCards: [Card] { poppedCards + stack }
+
+    /// The stacked card that shows. Nil while the blank page shows.
+    var selectedCard: Card? { stack.indices.contains(selection) ? stack[selection] : nil }
 
     /// The cards on the desktop, in slot order.
     var poppedCards: [Card] { slots.compactMap { $0 } }
@@ -171,9 +183,10 @@ struct Desk: Equatable {
     mutating func apply(_ command: Command) -> CardID? {
         switch command {
         case .new(let date): return newCard(at: date)
-        case .pop(let id): return pop(id)
+        case .pop: return pop()
         case .returnToStack(let id): returnToStack(id)
         case .flipStack(let direction): flipStack(direction)
+        case .writeBlank(let note, let date): writeBlank(note, at: date)
         case .move(let id, let slot): move(id, to: slot)
         case .delete(let id): delete(id)
         case .edit(let id, let note): update(id) { $0.note = note }
@@ -190,18 +203,19 @@ struct Desk: Equatable {
     // MARK: Transitions (private: `apply` is the only way in)
 
     private mutating func newCard(at date: Date) -> CardID? {
-        guard let slot = firstFreeSlot else { return nil }   // New refuses when the desktop is full
+        guard let slot = firstFreeSlot else {
+            selection = stack.count   // New refuses when the desktop is full; the blank page takes over
+            return nil
+        }
         let card = Card(id: freshID(at: date), note: .blank, collapsed: false)   // always expanded
         slots[slot.index] = card
         return card.id
     }
 
-    /// Pops the top card (`id == nil`) or the named stacked card into the first free slot.
-    private mutating func pop(_ id: CardID?) -> CardID? {
-        let index = id == nil ? (stack.isEmpty ? nil : 0) : stack.firstIndex { $0.id == id }
-        guard let slot = firstFreeSlot, let i = index else { return nil }
-        var card = stack.remove(at: i)
-        if clarity { card.collapsed = true }   // otherwise: its last state
+    /// Pops the selected card into the first free slot, state intact. The page under it shows next.
+    private mutating func pop() -> CardID? {
+        guard let slot = firstFreeSlot, selection < stack.count else { return nil }
+        let card = removeCard(at: selection)
         slots[slot.index] = card
         return card.id
     }
@@ -209,18 +223,27 @@ struct Desk: Equatable {
     private mutating func returnToStack(_ id: CardID) {
         guard let slot = slot(of: id), let card = slots[slot.index] else { return }
         slots[slot.index] = nil
-        stack.insert(card, at: 0)
+        insertCard(card, at: 0)
+        selection = 0
     }
 
-    /// The stack is a loop: `.next` sends the top card to the bottom, so the one under it shows;
-    /// `.previous` brings the bottom card back to the top. Each undoes the other, and `count`
-    /// flips in one direction show every stacked card once. Pop then takes whichever card shows.
+    /// The stack is a loop of its cards and one blank page after the last: `.next` moves down it
+    /// and wraps from the blank page to the top card, `.previous` is the reverse. Each undoes the
+    /// other, and `stack.count + 1` flips in one direction come back to the start.
     private mutating func flipStack(_ direction: Direction) {
-        guard stack.count > 1 else { return }
-        switch direction {
-        case .next: stack.append(stack.removeFirst())
-        case .previous: stack.insert(stack.removeLast(), at: 0)
+        let pages = stack.count + 1
+        selection = switch direction {
+        case .next: (selection + 1) % pages
+        case .previous: (selection + pages - 1) % pages
         }
+    }
+
+    /// The first character typed on the blank page: it becomes a card at the bottom, in the same
+    /// place in the loop, so the selection stays on it and a fresh blank page follows.
+    private mutating func writeBlank(_ note: Note, at date: Date) {
+        guard selection == stack.count, note != .blank else { return }
+        insertCard(Card(id: freshID(at: date), note: note), at: selection)
+        selection -= 1
     }
 
     /// Header drag released: move to `target`, swapping with its occupant.
@@ -229,20 +252,21 @@ struct Desk: Equatable {
         slots.swapAt(from.index, target.index)
     }
 
+    /// Deleting the selected stacked card shows the one under it (the blank page after the last).
     private mutating func delete(_ id: CardID) {
         if let slot = slot(of: id) {
             slots[slot.index] = nil
-        } else {
-            stack.removeAll { $0.id == id }
+        } else if let i = stack.firstIndex(where: { $0.id == id }) {
+            removeCard(at: i)
         }
     }
 
-    /// ON collapses every popped card; OFF expands every card, stacked ones included, so their
-    /// "last state" is expanded too. Per-card expands never touch `clarity`.
+    /// Sets every card, popped and stacked, to `clarity`. A per-card change afterwards never
+    /// touches `clarity`.
     private mutating func toggleClarity() {
         clarity.toggle()
         for i in slots.indices where slots[i] != nil { slots[i]?.collapsed = clarity }
-        if !clarity { for i in stack.indices { stack[i].collapsed = false } }
+        for i in stack.indices { stack[i].collapsed = clarity }
     }
 
     /// Makes the card set equal a fresh read of the folder. Gone files remove their card (and
@@ -253,8 +277,22 @@ struct Desk: Equatable {
         for (id, note) in notes { update(id) { if $0.note != note { $0.note = note } } }
         let known = Set(allCards.map(\.id))
         for (id, note) in notes.sorted(by: { $0.key < $1.key }) where !known.contains(id) {
-            stack.append(Card(id: id, note: note))
+            insertCard(Card(id: id, note: note, collapsed: clarity), at: stack.count)
         }
+    }
+
+    /// The only way a card enters `stack`. `selection` keeps pointing at the page it pointed at.
+    private mutating func insertCard(_ card: Card, at i: Int) {
+        stack.insert(card, at: i)
+        if i <= selection { selection += 1 }
+    }
+
+    /// The only way a card leaves `stack`. Removing the selected page leaves `selection` where it
+    /// is, which is now the page that was under it.
+    @discardableResult
+    private mutating func removeCard(at i: Int) -> Card {
+        if i < selection { selection -= 1 }
+        return stack.remove(at: i)
     }
 
     private mutating func update(_ id: CardID, _ change: (inout Card) -> Void) {
@@ -276,10 +314,9 @@ struct Desk: Equatable {
 
 // MARK: - What the windows show (pure derivations)
 
-/// Everything one card window displays. Derived; never stored.
+/// Everything one card view displays. Derived; never stored.
 struct CardFace: Equatable {
     let id: CardID
-    let slot: Slot
     let note: Note
     let collapsed: Bool
     let summary: SummaryFace
@@ -297,27 +334,31 @@ enum SummaryFace: Equatable {
 }
 
 struct StackFace: Equatable {
+    /// Real cards only, never the blank page.
     let count: Int
-    /// The selected (top) stacked card's content, shown on the stack.
-    let topNote: Note?
+    /// The card the stack shows; nil is the blank page.
+    let selected: CardFace?
     let clarity: Bool
     /// Derived from `firstFreeSlot`, so there is no "full" flag to set or clear.
     let desktopFull: Bool
-    /// The edge bands select another card only when there is more than one.
-    var canFlip: Bool { count > 1 }
 }
 
 extension Desk {
-    func cardFaces(hasKey: Bool) -> [CardFace] {
+    /// The popped cards, in slot order.
+    func cardFaces(hasKey: Bool) -> [(slot: Slot, face: CardFace)] {
         Slot.all.compactMap { slot in
-            guard let card = slots[slot.index] else { return nil }
-            return CardFace(id: card.id, slot: slot, note: card.note, collapsed: card.collapsed,
-                            summary: Desk.summaryFace(of: card, hasKey: hasKey))
+            slots[slot.index].map { (slot, Desk.face(of: $0, hasKey: hasKey)) }
         }
     }
 
-    var stackFace: StackFace {
-        StackFace(count: stack.count, topNote: stack.first?.note, clarity: clarity, desktopFull: firstFreeSlot == nil)
+    func stackFace(hasKey: Bool) -> StackFace {
+        StackFace(count: stack.count, selected: selectedCard.map { Desk.face(of: $0, hasKey: hasKey) },
+                  clarity: clarity, desktopFull: firstFreeSlot == nil)
+    }
+
+    private static func face(of card: Card, hasKey: Bool) -> CardFace {
+        CardFace(id: card.id, note: card.note, collapsed: card.collapsed,
+                 summary: summaryFace(of: card, hasKey: hasKey))
     }
 
     /// The whole summary lifecycle as seen by the UI, from two facts: the card's latest attempt

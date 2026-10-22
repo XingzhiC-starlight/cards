@@ -38,10 +38,9 @@ private final class StackView: NSView {
     private let menuButton = ActionButton(symbol: "ellipsis.circle", help: "Show all, hide all, settings and quit")
     private let preview = CardTextView()
     private let previewClip = PassThroughView()
-    private let emptyLabel = NSTextField(labelWithString: "Stack is empty")
+    private let emptyLabel = NSTextField(labelWithString: "Blank page")
     private let badge = NSTextField(labelWithString: "0")
     private let fullLabel = NSTextField(labelWithString: "Desktop full")
-    private var face: StackFace?
     private var hoveredEdge: Edge? {
         didSet { if hoveredEdge != oldValue { needsDisplay = true } }
     }
@@ -52,7 +51,7 @@ private final class StackView: NSView {
 
     init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu) {
         self.send = send
-        popButton = ActionButton(title: "Pop", help: "Bring the selected card out") { send(.pop(nil)) }
+        popButton = ActionButton(title: "Pop", help: "Bring the selected card out") { send(.pop) }
         clarityButton = ActionButton(title: "Clarity: Off", help: "Collapse or expand every card") { send(.toggleClarity) }
         super.init(frame: .zero)
 
@@ -100,16 +99,14 @@ private final class StackView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func apply(_ face: StackFace) {
-        self.face = face
-        if let note = face.topNote { preview.show(note) }
-        previewClip.isHidden = face.topNote == nil
-        emptyLabel.isHidden = face.topNote != nil
+        if let note = face.selected?.note { preview.show(note) }
+        previewClip.isHidden = face.selected == nil
+        emptyLabel.isHidden = face.selected != nil
         badge.stringValue = "\(face.count)"
         fullLabel.isHidden = !face.desktopFull
-        popButton.isEnabled = face.count > 0 && !face.desktopFull
+        popButton.isEnabled = face.selected != nil && !face.desktopFull
         clarityButton.title = face.clarity ? "Clarity: On" : "Clarity: Off"
         clarityButton.contentTintColor = face.clarity ? .white : Self.ribbonText
-        if !face.canFlip { hoveredEdge = nil }
         needsLayout = true
         needsDisplay = true
     }
@@ -187,9 +184,8 @@ private final class StackView: NSView {
         }
     }
 
-    /// The bands are live only when there is a card under the selected one to flip to.
     private func edge(at point: CGPoint) -> Edge? {
-        guard face?.canFlip == true, !content.contains(point) else { return nil }
+        guard !content.contains(point) else { return nil }
         return EdgeBands.edge(at: point, in: bounds)
     }
 }

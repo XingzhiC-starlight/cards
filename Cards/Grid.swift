@@ -96,7 +96,7 @@ enum EdgeBands {
 
     /// The band containing `point` (window-local coordinates, y up), or nil. In a corner, where
     /// two bands overlap, the edge the point is relatively closer to wins, so every point has at
-    /// most one meaning. Callers ask only when there is something to flip (`StackFace.canFlip`).
+    /// most one meaning.
     static func edge(at point: CGPoint, in bounds: CGRect) -> Edge? {
         guard bounds.contains(point) else { return nil }
         let bandX = bounds.width * fraction

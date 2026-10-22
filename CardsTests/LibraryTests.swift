@@ -21,7 +21,7 @@ final class LibraryTests: XCTestCase {
         try Data(original.utf8).write(to: cardFile)
         let library = Library(folder: folder)
         var desk = library.load()
-        desk.apply(.pop(nil))
+        desk.apply(.pop)
         library.save(desk)
         try FileManager.default.removeItem(at: folder)
 
@@ -52,7 +52,7 @@ final class LibraryTests: XCTestCase {
         try Data("# Groceries\n\n- eggs\n".utf8).write(to: cardFile)
         let library = Library(folder: folder)
         var desk = library.load()
-        desk.apply(.pop(nil))
+        desk.apply(.pop)
         XCTAssertTrue(library.save(desk), "the first save writes the sidecar")
         let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
         XCTAssertEqual(files.count, 2, "the card file and the sidecar are all there is")

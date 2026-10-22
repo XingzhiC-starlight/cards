@@ -106,19 +106,19 @@ final class DeskController {
     /// against the previous desk, so it also undoes UI drift: a card dropped back near its own
     /// slot (no model change) still snaps home.
     private func render() {
-        let faces = desk.cardFaces(hasKey: keys.apiKey != nil)
-        let live = Set(faces.map(\.id))
+        let popped = desk.cardFaces(hasKey: keys.apiKey != nil)
+        let live = Set(popped.map(\.face.id))
         for (id, window) in cardWindows where !live.contains(id) {
             window.orderOut(nil)
             window.close()
             cardWindows[id] = nil
         }
-        for face in faces {
+        for (slot, face) in popped {
             let window = cardWindows[face.id] ?? makeCardWindow(face.id)
-            window.apply(face, frame: grid.frame(of: face.slot))
+            window.apply(face, frame: grid.frame(of: slot))
             show(window)
         }
-        stackWindow.apply(desk.stackFace, frame: grid.stackFrame)
+        stackWindow.apply(desk.stackFace(hasKey: keys.apiKey != nil), frame: grid.stackFrame)
         show(stackWindow)
     }
 
