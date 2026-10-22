@@ -38,6 +38,32 @@ Run the unit tests (they use the app as their host and never touch `~/Documents/
 xcodebuild test -project Cards.xcodeproj -scheme Cards -derivedDataPath build/DerivedData
 ```
 
+## Share Cards with someone
+
+```bash
+scripts/package.sh
+```
+
+This makes a Release build and writes `build/release/Cards-<version>.dmg`. The version is the app's
+`CFBundleShortVersionString`. The script checks the app's signature, checks that the app has both
+`arm64` and `x86_64` slices, and verifies the disk image. It runs from any folder, and running it
+again replaces the old image.
+
+Send that one file. The other person needs a Mac with macOS 15 or later, Apple silicon or Intel.
+They do this:
+
+1. Open the dmg and drag **Cards** to **Applications**.
+2. Open Cards from Applications. macOS blocks it, because Apple has not notarized the app.
+3. Open **System Settings › Privacy & Security**, scroll to the message about Cards, click **Open
+   Anyway**, and confirm.
+4. If macOS asks whether Cards can access the Documents folder, allow it. Notes live in
+   `~/Documents/Cards`.
+5. For summaries, choose **Settings…** from the menu bar icon and paste their own Anthropic API key.
+   The image holds no key.
+
+Each new version you send repeats the Open Anyway step. If they saved a key, macOS may also ask again
+whether Cards can read its Keychain item. They choose **Always Allow**.
+
 ## Where to paste the API key
 
 Summaries use the Anthropic API (model `claude-haiku-5-5`). Click the menu bar icon (or **⋯** on
