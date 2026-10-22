@@ -89,19 +89,18 @@ final class StackWindow: NSWindow {
     }
 }
 
-/// Looks like one card: a tan ribbon with the toolbar (New, Pop, Clarity), "Desktop full",
+/// Looks like one card: a tan ribbon with the toolbar (New, Clarity), "Desktop full",
 /// the Hide all / Show all button and the app menu button, above the selected stacked card, which
 /// is a full `CardView`. The count badge sits in that card's bottom-right corner, and in the
 /// ribbon beside the Show all button while Hide all has removed the card. The window's margin is
 /// four invisible edge bands that select another stacked card: left/top the previous,
-/// right/bottom the next. Pop takes the selected card.
+/// right/bottom the next.
 /// The stack draws the card shape and the editing border; the `CardView` inside draws nothing.
 private final class StackView: NSView {
     /// A press on the ribbon's empty space: true when it moved and dragged the window, false for a click.
     var onRibbonPress: (NSEvent) -> Bool = { _ in false }
     private let send: (Command) -> Void
     private let toolbar = NSStackView()
-    private let popButton: ActionButton
     private let clarityButton: ActionButton
     private let toggleButton: ActionButton
     private let menuButton = ActionButton(symbol: "ellipsis.circle", help: "Settings and quit")
@@ -131,13 +130,12 @@ private final class StackView: NSView {
     init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu, toggleHidden: @escaping () -> Void) {
         self.send = send
         cardView = CardView(home: .stack, send: send)
-        popButton = ActionButton(title: "Pop", help: "Bring the selected card out") { send(.pop) }
         clarityButton = ActionButton(title: "Clarity: Off", help: "Collapse or expand every card") { send(.toggleClarity) }
         toggleButton = ActionButton(symbol: "eye", help: "Hide all") { toggleHidden() }
         super.init(frame: .zero)
 
         let newButton = ActionButton(title: "New", help: "Create a card") { send(.new(at: Date())) }
-        for button in [newButton, popButton, clarityButton] {
+        for button in [newButton, clarityButton] {
             button.font = .systemFont(ofSize: 12, weight: .semibold)
             button.contentTintColor = Palette.ribbonInk
             toolbar.addArrangedSubview(button)
@@ -187,10 +185,9 @@ private final class StackView: NSView {
             }
         }
         allHidden = visibility.isHidden
-        cardView.apply(face.selected)
+        cardView.apply(face.selected, desktopFull: face.desktopFull)
         badge.stringValue = "\(face.count)"
         fullLabel.isHidden = !face.desktopFull
-        popButton.isEnabled = face.selected != nil && !face.desktopFull
         clarityButton.title = face.clarity ? "Clarity: On" : "Clarity: Off"
         clarityButton.contentTintColor = face.clarity ? Palette.accent : Palette.ribbonInk
         needsLayout = true
