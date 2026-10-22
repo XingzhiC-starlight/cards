@@ -426,6 +426,8 @@ func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CG
         moved(window.frame)
     }
     var dragging = false
+    var suspendedInput: NSTextInputContext?
+    defer { suspendedInput?.activate() }
     while let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp],
                                        until: .distantFuture, inMode: .eventTracking, dequeue: false) {
         if event.type == .leftMouseUp {
@@ -437,7 +439,12 @@ func trackWindowDrag(from mouseDown: NSEvent, in window: NSWindow, threshold: CG
         _ = window.nextEvent(matching: .leftMouseDragged)      // consume the drag we peeked at
         let now = screenLocation(of: event)
         if !dragging && hypot(now.x - start.x, now.y - start.y) < threshold { continue }
-        if !dragging { window.orderFront(nil) }
+        if !dragging {
+            window.orderFront(nil)
+            // An active text input context makes the window server show each move about half a second late.
+            suspendedInput = NSTextInputContext.current
+            suspendedInput?.deactivate()
+        }
         dragging = true
         follow(event)
     }
