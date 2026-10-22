@@ -73,7 +73,7 @@ enum Command {
     /// Stack toolbar "New": a blank card, popped straight out, expanded, focused. On a full
     /// desktop it creates nothing and the stack shows its blank page instead.
     case new(at: Date)
-    /// Stack toolbar "Pop": the selected stacked card. Nothing while the blank page shows.
+    /// The stacked card's "↗ Pop" button: the selected card comes out. Nothing while the blank page shows.
     case pop
     /// Per-card "↩ Stack" button: the card goes to the top of the stack, and the stack shows it.
     case returnToStack(CardID)

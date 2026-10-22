@@ -151,10 +151,17 @@ enum CardShape {
 final class CardView: NSView {
     /// Where the card lives. A desktop card draws itself and can be dragged anywhere. A
     /// stacked card is drawn by the `StackView` around it, which also draws the editing border,
-    /// and cannot be dragged or returned to the stack.
+    /// and cannot be dragged.
     enum Home {
         case desktop(WindowDrag)
         case stack
+
+        var move: (title: String, help: String, command: (CardID) -> Command) {
+            switch self {
+            case .desktop: ("↩ Stack", "Return this card to the top of the stack", { .returnToStack($0) })
+            case .stack: ("↗ Pop", "Bring this card out", { _ in .pop })
+            }
+        }
     }
 
     /// Stack home only: the card's editing state changed, so the stack redraws its border.
@@ -169,6 +176,7 @@ final class CardView: NSView {
     private let hoverButtons = NSStackView()
     private let clarityButton = ActionButton(symbol: "rectangle.compress.vertical", help: "Collapse this card")
     private let refreshButton = ActionButton(symbol: "arrow.clockwise", help: "Refresh summary")
+    private let moveButton: ActionButton
     /// Nil is the stack's blank page.
     private var face: CardFace?
     /// Whether the last `apply` showed the collapsed look; nil before the first one.
@@ -193,6 +201,8 @@ final class CardView: NSView {
         self.home = home
         self.send = send
         formatBar = FormatBar(editor: editor)
+        let move = home.move
+        moveButton = ActionButton(title: move.title, help: move.help)
         super.init(frame: .zero)
 
         editor.onChange = { [unowned self] note in
@@ -230,16 +240,15 @@ final class CardView: NSView {
         refreshButton.handler = { [unowned self] in
             if let id = self.face?.id { self.send(.refreshSummary(id)) }
         }
-        let stackButton = ActionButton(title: "↩ Stack", help: "Return this card to the top of the stack") { [unowned self] in
-            if let id = self.face?.id { self.send(.returnToStack(id)) }
+        moveButton.handler = { [unowned self] in
+            if let id = self.face?.id { self.send(move.command(id)) }
         }
         let trashButton = ActionButton(symbol: "trash", help: "Delete this card") { [unowned self] in
             self.confirmDelete()
         }
-        for button in [refreshButton, clarityButton, stackButton, trashButton] {
+        for button in [refreshButton, clarityButton, moveButton, trashButton] {
             hoverButtons.addArrangedSubview(button)
         }
-        if case .stack = home { stackButton.isHidden = true }
         hoverButtons.spacing = 6
         hoverButtons.alphaValue = 0
         addSubview(hoverButtons)
@@ -247,7 +256,7 @@ final class CardView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func apply(_ face: CardFace?) {
+    func apply(_ face: CardFace?, desktopFull: Bool = false) {
         let previous = self.face
         self.face = face
         let note = face?.note ?? .blank
@@ -263,6 +272,8 @@ final class CardView: NSView {
         collapsedHeader.stringValue = note.title
         summaryView.show(face?.summary ?? .body(""))
         hoverButtons.isHidden = face == nil
+        moveButton.isEnabled = !desktopFull
+        moveButton.toolTip = desktopFull ? "Desktop full" : home.move.help
         let collapsed = face?.collapsed ?? false
         if showsCollapsed != collapsed {
             showsCollapsed = collapsed

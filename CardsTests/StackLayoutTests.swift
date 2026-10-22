@@ -1,15 +1,17 @@
 import XCTest
 @testable import Cards
 
-/// The stack's ribbon and count badge, laid out in a window that is never shown.
+/// The stack's ribbon, count badge and shown card's buttons, in a window that is never shown.
 final class StackLayoutTests: XCTestCase {
     /// The cell width a 1512-point screen gives, and a 1366-point one.
     private let wide: CGFloat = 302.4
     private let narrow: CGFloat = 273
+    private let belowAnyCell: CGFloat = 180
 
     private struct Stack {
         let window: StackWindow
         let toggled: () -> Int
+        let sent: () -> [Command]
 
         var view: NSView { window.contentView!.subviews[0] }   // the glass holds the stack view
         func control(_ tooltip: String) -> NSView {
@@ -20,18 +22,62 @@ final class StackLayoutTests: XCTestCase {
         var badge: NSView { control("Cards in the stack") }
         var toolbar: NSView { view.subviews.first { $0 is NSStackView }! }
         var desktopFull: NSView { view.subviews.first { ($0 as? NSTextField)?.stringValue == "Desktop full" }! }
+        var ribbonButtons: [NSButton] { (toolbar as! NSStackView).arrangedSubviews.compactMap { $0 as? NSButton } }
+        var card: CardView { view.subviews.compactMap { $0 as? CardView }.first! }
+    }
+
+    private func hoverButton(_ title: String, in card: CardView) -> NSButton? {
+        let row = card.subviews.first { type(of: $0) == NSStackView.self } as? NSStackView
+        return row?.arrangedSubviews.compactMap { $0 as? NSButton }.first { $0.title == title }
     }
 
     private func stack(width: CGFloat, _ visibility: Visibility = .all, full: Bool = false) -> Stack {
         var toggles = 0
-        let window = StackWindow(send: { _ in }, menu: { NSMenu() }, toggleHidden: { toggles += 1 },
+        var commands: [Command] = []
+        let window = StackWindow(send: { commands.append($0) }, menu: { NSMenu() }, toggleHidden: { toggles += 1 },
                                  drag: WindowDrag(moved: { _ in }, dropped: { _ in }))
         let card = CardFace(id: CardID(rawValue: "a"), note: Note(header: "Title", body: []), collapsed: false,
                             summary: .body(""))
         let face = StackFace(count: 12, selected: card, clarity: false, desktopFull: full)
         window.apply(face, cell: CGRect(x: 0, y: 0, width: width, height: (width * 0.78).rounded()), visibility: visibility)
         window.contentView!.layoutSubtreeIfNeeded()
-        return Stack(window: window, toggled: { toggles })
+        return Stack(window: window, toggled: { toggles }, sent: { commands })
+    }
+
+    func testTheRibbonHasNewAndClarityButNoPop() {
+        let titles = stack(width: wide).ribbonButtons.map(\.title)
+        XCTAssertEqual(titles.count, 2)
+        XCTAssertFalse(titles.contains("Pop"), "Pop is on the stacked card now")
+    }
+
+    func testTheStackedCardPopsItselfAndADesktopCardReturnsToTheStack() throws {
+        let shown = stack(width: wide)
+        let pop = try XCTUnwrap(hoverButton("↗ Pop", in: shown.card))
+        XCTAssertNil(hoverButton("↩ Stack", in: shown.card), "a stacked card is already on the stack")
+        XCTAssertTrue(pop.isEnabled)
+        XCTAssertEqual(pop.toolTip, "Bring this card out")
+        pop.performClick(nil)
+        guard case .pop? = shown.sent().last else { return XCTFail("Pop sends .pop, got \(shown.sent())") }
+
+        var sent: [Command] = []
+        let desktop = CardView(home: .desktop(WindowDrag(moved: { _ in }, dropped: { _ in })), send: { sent.append($0) })
+        desktop.apply(CardFace(id: CardID(rawValue: "a"), note: Note(header: "Title", body: []), collapsed: false,
+                               summary: .body("")))
+        XCTAssertNil(hoverButton("↗ Pop", in: desktop), "a desktop card is already out")
+        let back = try XCTUnwrap(hoverButton("↩ Stack", in: desktop))
+        XCTAssertEqual(back.toolTip, "Return this card to the top of the stack")
+        back.performClick(nil)
+        guard case .returnToStack(let id)? = sent.last else { return XCTFail("↩ Stack sends .returnToStack, got \(sent)") }
+        XCTAssertEqual(id, CardID(rawValue: "a"))
+    }
+
+    func testPopIsGreyedOnAFullDesktopAndSaysWhy() throws {
+        let full = stack(width: wide, full: true)
+        let pop = try XCTUnwrap(hoverButton("↗ Pop", in: full.card))
+        XCTAssertFalse(pop.isEnabled)
+        XCTAssertEqual(pop.toolTip, "Desktop full")
+        let roomAgain = stack(width: wide)
+        XCTAssertTrue(try XCTUnwrap(hoverButton("↗ Pop", in: roomAgain.card)).isEnabled)
     }
 
     func testTheToggleOffersHideAllWhileCardsShowAndShowAllWhileHidden() throws {
@@ -93,7 +139,7 @@ final class StackLayoutTests: XCTestCase {
     func testTheRibbonOnlyBadgeGivesWayRatherThanCoverTheToolbar() {
         let wideRibbon = stack(width: wide, .hideAll)
         XCTAssertFalse(wideRibbon.badge.isHidden, "with room the count shows beside the toggle")
-        let narrowRibbon = stack(width: 256, .hideAll)
+        let narrowRibbon = stack(width: belowAnyCell, .hideAll)
         XCTAssertTrue(narrowRibbon.badge.isHidden, "without room it goes instead of covering the Clarity button")
         XCTAssertGreaterThan(narrowRibbon.toggle.frame.minX, narrowRibbon.toolbar.frame.maxX, "and the buttons stay apart")
     }
