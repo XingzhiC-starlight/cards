@@ -7,25 +7,26 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Cards behave as one group: clicking any card brings all cards forward; clicking another app drops them all behind it.
 - Clicking a card activates the app and takes keyboard focus. Return to other apps the normal way (click or ⌘-Tab).
 - Cards follow the user across Spaces and over full-screen apps.
-- App home: menu bar icon with Show all / Hide all / Open stack / Quit. Global shortcut ⌥⌘C hides/shows every card.
+- App home: menu bar icon with Show all / Hide all / Open stack / Quit, and a Hide all / Show all button in the stack's ribbon (revised 2026-10-22). Global shortcut ⌥⌘C hides/shows every card.
 
 ## Hide all (revised 2026-10-22)
-- Hide all (menu bar icon, the stack's menu, or ⌥⌘C) hides every popped card, free ones included, and shrinks the stack to just its blue ribbon, at the top of wherever the stack is. The ribbon never hides.
-- While hidden, the ribbon keeps New, Pop, Clarity, the count badge and the menu button; the menu offers Show all. The ribbon can still be dragged.
-- Show all, ⌥⌘C, or opening the app again (Spotlight, Finder, Launchpad) while it runs brings back the stack's card area and every popped card, and brings the app forward.
+- Hide all (menu bar icon, the stack ribbon's button, or ⌥⌘C) hides every popped card, free ones included, and shrinks the stack to just its blue ribbon, at the top of wherever the stack is. The ribbon never hides.
+- The ribbon's button is a one-click toggle, the same as ⌥⌘C: an eye with a slash (tooltip "Hide all") while cards are shown, a plain eye ("Show all") while they are hidden. It sits left of the menu button.
+- While hidden, the ribbon keeps New, Pop, Clarity, the toggle and the menu button, plus the count badge, which moves into the ribbon beside the toggle because the card area is gone (on a very narrow stack the badge is dropped before it would cover the toolbar). The ribbon can still be dragged.
+- Show all (the toggle or the menu bar icon), ⌥⌘C, or opening the app again (Spotlight, Finder, Launchpad) while it runs brings back the stack's card area and every popped card, and brings the app forward.
 - New or Pop while hidden shows only that card; the rest stay hidden. Its slot is chosen as if the hidden cards were in place, free ones included.
 - Hidden is not persisted: every launch starts with everything shown.
 
 ## Grid and sizing
 - Screen is an invisible 5 × 4 grid. Card width = screen width / 5; height = (screen height below menu bar) / 4.
-- 20 equal slots. The stack takes one (top-left by default), so at most 19 cards are on the desktop.
+- 20 equal slots. The stack takes one (top-right by default, so Pop still fills from the top-left; revised 2026-10-22), so at most 19 cards are on the desktop. A version-1 sidecar keeps the stack top-left, and any saved place of the stack is kept.
 - Recomputed when the display setup changes; snapped cards re-snap to their slots, free cards and a free stack keep their place as a fraction of the screen (revised 2026-10-22).
 
 ## Stack
-- Its own card-sized window, top-left until you move it: the control center, marked by a sky-blue ribbon on top.
+- Its own card-sized window, top-right until you move it (revised 2026-10-22): the control center, marked by a sky-blue ribbon on top.
 - Moved like a card (see Moving cards and the stack), by pressing the ribbon's empty space and dragging. A click there that does not move still acts as the edge band under it.
-- Looks like one card: the ribbon holds the toolbar and a count badge; below it, the selected stacked card (header and body). No list or divider for the cards underneath.
-- Toolbar: New, Pop, Clarity on/off (global), and a menu button with Show all / Hide all / Settings… / Quit, so the control center works even when the menu bar icon is hidden.
+- Looks like one card: the ribbon holds the toolbar, "Desktop full" when it applies, the Hide all / Show all toggle and the menu button; below it, the selected stacked card (header and body). No list or divider for the cards underneath. The count badge sits in the bottom-right corner of the card area, clear of the card's hover buttons and its formatting bar (revised 2026-10-22).
+- Toolbar: New, Pop, Clarity on/off (global). To its right come "Desktop full" (it truncates before any button moves), the Hide all / Show all toggle (see Hide all) and a menu button with Settings… / Quit, so the control center works even when the menu bar icon is hidden (revised 2026-10-22).
 - The selected stacked card is a full card (revised 2026-10-22): edited in place exactly like a popped card (see Card content and editing), with the same per-card buttons except ↩ Stack, and collapsible to its summary (see Clarity mode).
 - Deleting the selected card shows the one underneath.
 - At launch the stack shows its top card, or the blank page when the stack is empty.
@@ -44,7 +45,9 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - On release it snaps to that slot if its center is within 15% of a cell (in cell widths and heights) of the slot's center. Otherwise it stays exactly where it was dropped.
 - Snapping onto a slot held by another snapped card or the stack swaps them: the occupant goes to the dragged one's old place, a slot or an exact free spot. Free cards that only overlap the slot stay put.
 - Free cards overlap anything. The card being dragged comes to the front; clicking the app keeps the cards' front-to-back order.
-- A drop always ends fully on screen: a card dropped past an edge slides back in.
+- Free places may overhang the screen (revised 2026-10-22): a card or the stack can hang partly off the left, right and bottom edges, but never above the top, so its header (the ribbon, for the stack) stays under the menu bar. At least 40pt of it stays reachable: its top 40pt, the header strip, and 40pt of its width stay inside the screen minus the Dock. A drop past that limit lands at the limit, and the guide follows the limit too.
+- Snapped places are always fully on screen; only free places overhang.
+- When the display setup changes, the limit is applied to the new screen so a card is never lost off a smaller one, but its saved spot is kept as it was and comes back out on a larger one.
 - Free positions are saved, so they survive relaunch.
 
 ## Switching stacked cards (stack only; revised 2026-10-22)

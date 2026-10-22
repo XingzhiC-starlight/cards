@@ -39,7 +39,7 @@ func send(_ command: Command) {
 | File | What it owns |
 | --- | --- |
 | `Desk.swift` | the state, `Command`, every rule (pop, flip, swap, clarity, restore), and Hide all's `Visibility` |
-| `Grid.swift` | slots, free positions, the snap rule, frames and edge bands (pure) |
+| `Grid.swift` | slots, free positions, the snap rule, the overhang limit, frames and edge bands (pure) |
 | `Note.swift` | a card's content, its Markdown format, and the typing rules for lists |
 | `DeskController.swift` | the single owner of the desk and of every window |
 | `Library.swift` | `~/Documents/Cards/*.md` and the hidden sidecar `.cards.json` |
@@ -54,9 +54,15 @@ func send(_ command: Command) {
   and summary with it.
 - **A place is a slot or a free point.** `Place` is `.slot(Slot)` or `.free(GridPoint)`, the
   center as a fraction of the screen, so a display change rescales free cards with no model
-  change. Cards and the stack both have one. `Place.dropped(at:)` is the whole snap rule (slide
-  on screen, then snap within 15 % of a cell), and the drag guide asks it the same question
-  while the pointer moves, so the guide can never promise a snap the drop won't make.
+  change. Cards and the stack both have one. `Place.dropped(at:)` is the whole snap rule (snap
+  within 15 % of a cell), and the drag guide asks it the same question while the pointer moves,
+  so the guide can never promise a snap the drop won't make.
+- **Overhang is a rendering rule.** `Grid.clamped` is the one place that says how far a free
+  place may leave the screen (40 points of the header strip and of the width stay inside
+  `reachable`, the screen minus menu bar and Dock; the top never rises). Computing a frame and
+  reading a drag both go through it, and the model never does: a saved point keeps its raw
+  fraction, so a smaller display pulls a card back while a larger one gives it back its spot.
+  Snapped places are cells of `area`, so they always fit.
 - **The stack is a loop with one blank page.** `Desk.stack` is the stacked cards, top first,
   and `Desk.selection` is the loop position: an index into the stack, or `stack.count` for the
   blank page after the bottom card. Next and previous move the position and never reorder the
@@ -69,7 +75,9 @@ func send(_ command: Command) {
   to the stack. It shows the blank page when it has no card.
 - **Hide all is presentation.** `Visibility` lives outside the desk and is never saved. While
   hidden, New and Pop reveal just the card they bring out, and the stack window shrinks to its
-  ribbon instead of ordering out.
+  ribbon instead of ordering out. The stack window gets the `Visibility` value itself: its
+  ribbon-only shape, the count badge's place and the toggle button's icon all derive from it.
+  The toggle calls `DeskController.toggleHidden`, the path ⌥⌘C takes, not a `Command`.
 - **Derived, idempotent side effects.** `render()` compares the desk with the real windows,
   `Library.save` with the disk, and `Summarizer.sync` with the requests in flight. Each is safe
   to run any number of times.
@@ -103,6 +111,8 @@ Later changes, after trying the app:
   center) above the selected card, with no list of the cards underneath.
 - The stack's ribbon has a menu button with the menu bar icon's menu (one builder,
   `AppDelegate.makeAppMenu`), because a crowded menu bar can hide the icon behind the notch.
+  Later it got its own Hide all button, so the ribbon's variant of the menu dropped the
+  visibility items and Open Stack.
 - Hover follows the pointer's real position (one mouse-move monitor in `DeskController`) instead
   of per-view enter/exit events, which a fast pointer can skip.
 - 2026-10-22 revision: the selected stacked card became editable, with its own clarity, refresh
@@ -114,6 +124,12 @@ Later changes, after trying the app:
   the slot a drop would snap to. The grid became 20 equal slots and the stack one more movable
   item. Sidecar version 2 adds free points and the stack's place; version 1 files, whose slot
   numbers skipped the stack's cell, are shifted by one on load.
+- 2026-10-22, overhang and the ribbon toggle: free cards and the stack may hang off the left,
+  right and bottom edges, never the top, as long as 40 points of the header strip and the width
+  stay reachable. The stack's home moved to the top-right so Pop fills from the top-left;
+  version 1 sidecars keep it top-left. Hide all / Show all became a one-click button in the
+  ribbon, and the count badge moved to the card area's bottom-right, into the ribbon only while
+  Hide all has removed the card.
 
 ## Tradeoffs accepted
 
@@ -148,7 +164,13 @@ Later changes, after trying the app:
 - The menu bar menu adds "Settings…" so the API key has somewhere to go.
 - With no API key, a collapsed card shows "Summary unavailable" with the reason on hover.
 - A collapsed card whose body is empty or one line shows that line in the lighter style.
-- The grid uses the menu-bar screen and does not subtract the Dock.
+- The grid uses the menu-bar screen and does not subtract the Dock. Only the overhang limit
+  does, so a header can't hide under it.
+- The count badge sits at the bottom-right of the stack's card area: the hover buttons are at
+  the top-right and the formatting bar's buttons at the left, so it covers neither. It takes no
+  clicks, so a press on it still places the caret in the text under it. Under Hide all, in a
+  ribbon too narrow for it beside the toolbar and the buttons, it is hidden, and "Desktop full"
+  truncates first, so no button ever moves.
 - Free cards piled into one slot leave other slots untaken, so Pop also stops at 19 cards on the
   desktop, keeping the old ceiling.
 - The guide window sits above the dragged card and ignores the mouse; a swap target shows the

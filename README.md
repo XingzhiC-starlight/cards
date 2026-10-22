@@ -1,7 +1,7 @@
 # Cards
 
 A macOS prototype where every note is its own small window, laid out on an invisible 5 × 4 grid,
-with a stack of the rest in the top-left corner. Native Swift and AppKit, no dependencies.
+with a stack of the rest in the top-right corner. Native Swift and AppKit, no dependencies.
 The behaviour is specified in [CARDS-SPEC.md](CARDS-SPEC.md); how the code is put together is in
 [DESIGN.md](DESIGN.md).
 
@@ -15,11 +15,12 @@ Requires macOS 15 or later and Xcode 26.
 
 Cards is a menu bar app, so it has no Dock icon. Look for the stacked-rectangles icon in the menu
 bar: it has Show All, Hide All, Open Stack, Settings… and Quit. **⌥⌘C** hides or shows every card
-from anywhere. Hide All leaves the stack's blue ribbon in the top-left corner, so New, Pop, Clarity
+from anywhere. Hide All leaves the stack's blue ribbon where the stack is, so New, Pop, Clarity
 and the menu stay in reach. Opening Cards again from Finder or Spotlight shows everything.
 
-On a MacBook with a crowded menu bar, macOS may hide the icon behind the camera notch. The same
-menu is on the stack: click **⋯** at the right of its blue ribbon.
+On a MacBook with a crowded menu bar, macOS may hide the icon behind the camera notch. The stack's
+blue ribbon has what you need: the eye button hides or shows everything, and **⋯** at its right
+opens Settings… and Quit.
 
 ## Build from the command line
 
@@ -62,7 +63,7 @@ against another folder, pass `-CardsFolder /path/to/folder` as a launch argument
 | Select a stacked card | Swipe left or right with two fingers on the stack, or click the thin band along its edge: right/bottom = next, left/top = previous |
 | Edit a stacked card | Click into it on the stack; it edits like any other card |
 | Bring a card out | Select it, then click **Pop** in the stack's blue ribbon |
-| Move a card | Drag it by its title; it snaps to the nearest cell and swaps with whatever is there |
+| Move a card | Drag it by its title; it snaps to the nearest cell and swaps with whatever is there, or stays where you let go, even partly off the left, right or bottom edge |
 | Put a card back | Hover it and click **↩ Stack** |
 | Collapse to a summary | Hover a card and click the collapse button, or use **Clarity** on the stack for every card |
 | Format | ⌘B, ⌘I, or start a line with `- `, `1. ` or `[] `; the bar at the bottom of the card has the same five actions |
