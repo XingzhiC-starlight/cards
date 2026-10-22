@@ -90,7 +90,7 @@ final class StackWindow: NSWindow {
     }
 }
 
-/// Looks like one card: a sky-blue ribbon with the toolbar (New, Pop, Clarity), "Desktop full",
+/// Looks like one card: a tan ribbon with the toolbar (New, Pop, Clarity), "Desktop full",
 /// the Hide all / Show all button and the app menu button, above the selected stacked card, which
 /// is a full `CardView`. The count badge sits in that card's bottom-right corner, and in the
 /// ribbon beside the Show all button while Hide all has removed the card. The window's margin is
@@ -109,12 +109,12 @@ private final class StackView: NSView {
     private let cardView: CardView
     /// False under Hide all: the window is only the ribbon, and the edge bands do nothing.
     private(set) var showsCard = true
-    /// Hide all is on, so the toggle offers Show all.
+    /// Hide all is on: the toggle shows a slashed eye and offers Show all.
     private var allHidden = false {
         didSet {
             guard allHidden != oldValue else { return }
             let help = allHidden ? "Show all" : "Hide all"
-            toggleButton.image = NSImage(systemSymbolName: allHidden ? "eye" : "eye.slash", accessibilityDescription: help)
+            toggleButton.image = NSImage(systemSymbolName: allHidden ? "eye.slash" : "eye", accessibilityDescription: help)
             toggleButton.toolTip = help
         }
     }
@@ -128,30 +128,28 @@ private final class StackView: NSView {
     }
 
     static let ribbonHeight: CGFloat = 40
-    static let ribbon = NSColor(srgbRed: 0.56, green: 0.80, blue: 0.98, alpha: 1)
-    static let ribbonText = NSColor(srgbRed: 0.04, green: 0.21, blue: 0.37, alpha: 1)
 
     init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu, toggleHidden: @escaping () -> Void) {
         self.send = send
         cardView = CardView(home: .stack, send: send)
         popButton = ActionButton(title: "Pop", help: "Bring the selected card out") { send(.pop) }
         clarityButton = ActionButton(title: "Clarity: Off", help: "Collapse or expand every card") { send(.toggleClarity) }
-        toggleButton = ActionButton(symbol: "eye.slash", help: "Hide all") { toggleHidden() }
+        toggleButton = ActionButton(symbol: "eye", help: "Hide all") { toggleHidden() }
         super.init(frame: .zero)
 
         let newButton = ActionButton(title: "New", help: "Create a card") { send(.new(at: Date())) }
         for button in [newButton, popButton, clarityButton] {
             button.font = .systemFont(ofSize: 12, weight: .semibold)
-            button.contentTintColor = Self.ribbonText
+            button.contentTintColor = Palette.ribbonInk
             toolbar.addArrangedSubview(button)
         }
         toolbar.spacing = 14
         addSubview(toolbar)
 
-        toggleButton.contentTintColor = Self.ribbonText
+        toggleButton.contentTintColor = Palette.ribbonInk
         addSubview(toggleButton)
 
-        menuButton.contentTintColor = Self.ribbonText
+        menuButton.contentTintColor = Palette.ribbonInk
         menuButton.handler = { [unowned menuButton] in
             // Drops down from the button, like a menu bar menu (the button view is flipped).
             menu().popUp(positioning: nil, at: NSPoint(x: 0, y: menuButton.bounds.maxY + 4), in: menuButton)
@@ -162,7 +160,7 @@ private final class StackView: NSView {
         addSubview(cardView)
 
         badge.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-        badge.textColor = Self.ribbonText
+        badge.textColor = Palette.ribbonInk
         badge.alignment = .center
         badge.wantsLayer = true
         badge.layer?.cornerRadius = 8
@@ -170,7 +168,7 @@ private final class StackView: NSView {
         addSubview(badge)
 
         fullLabel.font = .systemFont(ofSize: 11, weight: .semibold)
-        fullLabel.textColor = NSColor(srgbRed: 0.70, green: 0.07, blue: 0.07, alpha: 1)
+        fullLabel.textColor = Palette.danger
         fullLabel.lineBreakMode = .byTruncatingTail
         fullLabel.toolTip = "Desktop full: no free slot for Pop or New"   // truncated, it may read only "…"
         fullLabel.isHidden = true
@@ -195,7 +193,7 @@ private final class StackView: NSView {
         fullLabel.isHidden = !face.desktopFull
         popButton.isEnabled = face.selected != nil && !face.desktopFull
         clarityButton.title = face.clarity ? "Clarity: On" : "Clarity: Off"
-        clarityButton.contentTintColor = face.clarity ? .white : Self.ribbonText
+        clarityButton.contentTintColor = face.clarity ? Palette.accent : Palette.ribbonInk
         needsLayout = true
         needsDisplay = true
     }
@@ -251,11 +249,11 @@ private final class StackView: NSView {
             let text = card.insetBy(dx: CardView.margin.width, dy: CardView.margin.height)
             badge.frame = NSRect(x: text.maxX - badgeWidth, y: text.minY + (CardView.formatBarHeight - 17) / 2,
                                  width: badgeWidth, height: 17)
-            badge.layer?.backgroundColor = Self.ribbon.withAlphaComponent(0.4).cgColor
+            badge.layer?.backgroundColor = Palette.ribbon.withAlphaComponent(0.55).cgColor
             badge.isHidden = false
         } else {
             badge.frame = NSRect(x: trailing - 8 - badgeWidth, y: ribbonMid - 9.5, width: badgeWidth, height: 17)
-            badge.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.75).cgColor
+            badge.layer?.backgroundColor = Palette.paper.withAlphaComponent(0.85).cgColor
             badge.isHidden = badge.frame.minX < toolbar.frame.maxX + 8
             if !badge.isHidden { trailing = badge.frame.minX }
         }
@@ -269,14 +267,14 @@ private final class StackView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let lineWidth: CGFloat = cardEditing ? 2 : 1
         let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
-        CardShape.fill.setFill()
+        Palette.paper.setFill()
         shape.fill()
         NSGraphicsContext.saveGraphicsState()
         shape.addClip()
-        Self.ribbon.setFill()
+        Palette.ribbon.setFill()
         ribbonRect.fill()
         if let edge = hoveredEdge {
-            NSColor(white: 0, alpha: 0.06).setFill()
+            Palette.shade.setFill()
             EdgeBands.rect(of: edge, in: bounds).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -284,12 +282,12 @@ private final class StackView: NSView {
             let band = EdgeBands.rect(of: edge, in: bounds)
             let chevron = NSAttributedString(string: edge.direction == .previous ? "‹" : "›", attributes: [
                 .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
-                .foregroundColor: NSColor(white: 0, alpha: 0.45),
+                .foregroundColor: Palette.inkSoft,
             ])
             let size = chevron.size()
             chevron.draw(at: NSPoint(x: band.midX - size.width / 2, y: band.midY - size.height / 2))
         }
-        (cardEditing ? NSColor.controlAccentColor.withAlphaComponent(0.85) : CardShape.border).setStroke()
+        (cardEditing ? Palette.accent.withAlphaComponent(0.85) : Palette.line).setStroke()
         shape.lineWidth = lineWidth
         shape.stroke()
         window?.invalidateShadow()

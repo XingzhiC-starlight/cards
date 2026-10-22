@@ -10,8 +10,8 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - App home: menu bar icon with Show all / Hide all / Open stack / Quit, and a Hide all / Show all button in the stack's ribbon (revised 2026-10-22). Global shortcut ⌥⌘C hides/shows every card.
 
 ## Hide all (revised 2026-10-22)
-- Hide all (menu bar icon, the stack ribbon's button, or ⌥⌘C) hides every popped card, free ones included, and shrinks the stack to just its blue ribbon, at the top of wherever the stack is. The ribbon never hides.
-- The ribbon's button is a one-click toggle, the same as ⌥⌘C: an eye with a slash (tooltip "Hide all") while cards are shown, a plain eye ("Show all") while they are hidden. It sits left of the menu button.
+- Hide all (menu bar icon, the stack ribbon's button, or ⌥⌘C) hides every popped card, free ones included, and shrinks the stack to just its tan ribbon, at the top of wherever the stack is. The ribbon never hides.
+- The ribbon's button is a one-click toggle, the same as ⌥⌘C: the icon shows the current state, a plain eye (tooltip "Hide all") while cards are shown, an eye with a slash ("Show all") while they are hidden (revised 2026-10-22). It sits left of the menu button.
 - While hidden, the ribbon keeps New, Pop, Clarity, the toggle and the menu button, plus the count badge, which moves into the ribbon beside the toggle because the card area is gone (on a very narrow stack the badge is dropped before it would cover the toolbar). The ribbon can still be dragged.
 - Show all (the toggle or the menu bar icon), ⌥⌘C, or opening the app again (Spotlight, Finder, Launchpad) while it runs brings back the stack's card area and every popped card, and brings the app forward.
 - New or Pop while hidden shows only that card; the rest stay hidden. Its slot is chosen as if the hidden cards were in place, free ones included.
@@ -23,7 +23,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Recomputed when the display setup changes; snapped cards re-snap to their slots, free cards and a free stack keep their place as a fraction of the screen (revised 2026-10-22).
 
 ## Stack
-- Its own card-sized window, top-right until you move it (revised 2026-10-22): the control center, marked by a sky-blue ribbon on top.
+- Its own card-sized window, top-right until you move it (revised 2026-10-22): the control center, marked by a tan ribbon on top.
 - Moved like a card (see Moving cards and the stack), by pressing the ribbon's empty space and dragging. A click there that does not move still acts as the edge band under it.
 - Looks like one card: the ribbon holds the toolbar, "Desktop full" when it applies, the Hide all / Show all toggle and the menu button; below it, the selected stacked card (header and body). No list or divider for the cards underneath. The count badge sits in the bottom-right corner of the card area, clear of the card's hover buttons and its formatting bar (revised 2026-10-22).
 - Toolbar: New, Pop, Clarity on/off (global). To its right come "Desktop full" (it truncates before any button moves), the Hide all / Show all toggle (see Hide all) and a menu button with Settings… / Quit, so the control center works even when the menu bar icon is hidden (revised 2026-10-22).
@@ -94,7 +94,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - One hidden sidecar file for positions (each card's and the stack's slot or free spot), stack order, collapsed state, and cached summaries.
 
 ## Look
-- Neutral light cards, thin border, soft shadow, system font. Per-card colors later.
+- Warm beige cards (revised 2026-10-22, see DESIGN.md), thin border, soft shadow, system font. Per-card colors later.
 
 ## Explicitly out of scope for the prototype
 - Always-on-top mode, drag-to-stack, fonts/colors/sizes/tables/images/links, multiple stacks, sync, sharing.

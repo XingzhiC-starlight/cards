@@ -70,8 +70,6 @@ func configureAsCard(_ window: NSWindow) {
 enum CardShape {
     static let gap: CGFloat = 3
     static let radius: CGFloat = 9
-    static let fill = NSColor(white: 0.985, alpha: 1)
-    static let border = NSColor(white: 0, alpha: 0.16)
 
     static func path(in bounds: NSRect, lineWidth: CGFloat) -> NSBezierPath {
         let rect = bounds.insetBy(dx: gap + lineWidth / 2, dy: gap + lineWidth / 2)
@@ -156,7 +154,7 @@ final class CardView: NSView {
         addSubview(scrollView)
 
         collapsedHeader.font = EditorStyle.header
-        collapsedHeader.textColor = EditorStyle.textColor
+        collapsedHeader.textColor = Palette.ink
         collapsedHeader.lineBreakMode = .byTruncatingTail
         collapsedHeader.maximumNumberOfLines = 1
         addSubview(collapsedHeader)
@@ -280,9 +278,9 @@ final class CardView: NSView {
         guard case .desktop = home else { return }
         let lineWidth: CGFloat = isEditing ? 2 : 1
         let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
-        CardShape.fill.setFill()
+        Palette.paper.setFill()
         shape.fill()
-        (isEditing ? NSColor.controlAccentColor.withAlphaComponent(0.85) : CardShape.border).setStroke()
+        (isEditing ? Palette.accent.withAlphaComponent(0.85) : Palette.line).setStroke()
         shape.lineWidth = lineWidth
         shape.stroke()
         window?.invalidateShadow()
@@ -433,11 +431,11 @@ final class SlotGuide: NSWindow {
             let lineWidth: CGFloat = snaps ? 2.5 : 1.5
             let shape = CardShape.path(in: bounds, lineWidth: lineWidth)
             if snaps {
-                NSColor.controlAccentColor.withAlphaComponent(0.10).setFill()
+                Palette.accent.withAlphaComponent(0.10).setFill()
                 shape.fill()
-                NSColor.controlAccentColor.withAlphaComponent(0.9).setStroke()
+                Palette.accent.withAlphaComponent(0.9).setStroke()
             } else {
-                NSColor(white: 0, alpha: 0.35).setStroke()
+                Palette.guide.setStroke()
                 shape.setLineDash([6, 4], count: 2, phase: 0)
             }
             shape.lineWidth = lineWidth
@@ -455,7 +453,7 @@ final class SummaryView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         label.font = .systemFont(ofSize: 12)
-        label.textColor = NSColor(white: 0.45, alpha: 1)
+        label.textColor = Palette.inkSoft
         label.maximumNumberOfLines = 2
         label.lineBreakMode = .byTruncatingTail
         label.cell?.truncatesLastVisibleLine = true
@@ -538,7 +536,7 @@ final class ActionButton: NSButton {
         toolTip = help
         isBordered = false
         refusesFirstResponder = true
-        contentTintColor = NSColor(white: 0.35, alpha: 1)
+        contentTintColor = Palette.inkSoft
         target = self
         action = #selector(fire)
     }

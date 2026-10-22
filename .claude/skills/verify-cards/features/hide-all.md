@@ -1,6 +1,6 @@
 # Hide all
 
-Hide all puts every popped card away and shrinks the stack to its blue ribbon, which stays where
+Hide all puts every popped card away and shrinks the stack to its tan ribbon, which stays where
 the stack is. The ribbon's eye button toggles between Hide all and Show all in one click. While
 hidden, New and Pop still work and show only the card they bring out.
 
@@ -30,7 +30,7 @@ Preconditions:
 - **Hide.** Click the eye button. Run `cv ax press "Hide all" stack`. `cv ax windows` lists one
   window, the stack, now only ribbon-high (`342x46` on the owner's display). `cv ax tree` shows
   `Show all` where `Hide all` was, no `AXTextArea`, and `Cards in the stack` inside the ribbon.
-  `cv shot hide-ribbon` shows the blue strip only.
+  `cv shot hide-ribbon` shows the tan strip only.
 - **New while hidden.** Click New. Run `cv ax press New`, then `cv ax type 'Shown alone'`.
   `cv ax windows` lists the ribbon and one new card. The popped Alpha card stays hidden.
   `cv ax text card=Shown` prints `"Shown alone"`.

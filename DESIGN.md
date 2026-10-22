@@ -47,6 +47,7 @@ func send(_ command: Command) {
 | `CardWindow.swift`, `CardEditor.swift` | the card window, press routing, and the text view |
 | `StackWindow.swift`, `Swipe.swift` | the stack window; the rules that turn scroll events into flips (pure) |
 | `Settings.swift`, `App.swift` | API key and settings; entry point, menu bar, hotkey, reopen |
+| `Palette.swift` | every color the app draws, as named tokens (see Color) |
 
 - **Location is ownership.** A `Card` value lives inside its location: a desktop entry (with its
   `Place`) or a stack position. There is no id-to-card map to keep in step,
@@ -77,6 +78,8 @@ func send(_ command: Command) {
   hidden, New and Pop reveal just the card they bring out, and the stack window shrinks to its
   ribbon instead of ordering out. The stack window gets the `Visibility` value itself: its
   ribbon-only shape, the count badge's place and the toggle button's icon all derive from it.
+  The icon shows the current state (an eye while cards show, a slashed eye while hidden); the
+  tooltip names what a click does.
   The toggle calls `DeskController.toggleHidden`, the path ⌥⌘C takes, not a `Command`.
 - **Derived, idempotent side effects.** `render()` compares the desk with the real windows,
   `Library.save` with the disk, and `Summarizer.sync` with the requests in flight. Each is safe
@@ -86,6 +89,46 @@ func send(_ command: Command) {
   half-deleted. Paragraph 0 is restyled as the header after every change.
 - **Summaries.** A summary records the fingerprint of the note it describes; it is fresh only
   while that matches. Spinner, failure and "no key" are derived, not stored as flags.
+
+## Color
+
+Cards sit beside windows that are mostly white: editors, terminals, Codex, Claude Code. A white
+card with a sky-blue ribbon read as one more of them. The palette is warm paper instead: every
+card is beige, and the stack's ribbon is the same hue made darker, so the control center reads as
+part of the card it sits on. All values are sRGB, live in `Palette` (`Palette.swift`), and nowhere
+else; a view never writes a color literal. Cards always use the light look, in Dark Mode too, so
+there is one set of values.
+
+| Token | Hex | Used for |
+| --- | --- | --- |
+| `paper` | `#F4ECDE` | card and stack fill |
+| `ribbon` | `#D8C5A2` | the stack's ribbon; at 55 % under the count badge on the card |
+| `ink` | `#2B2520` | card text, the caret |
+| `inkSoft` | `#716453` | list markers, summaries, card buttons, edge-band chevrons |
+| `inkFaint` | `#B3A68F` | the empty card's "Title" placeholder |
+| `ribbonInk` | `#46361F` | ribbon buttons and the count badge |
+| `line` | `#5A4630` at 24 % | card and stack border |
+| `shade` | `#5A4630` at 7 % | a hovered edge band |
+| `guide` | `#5A4630` at 45 % | the dashed slot guide |
+| `accent` | `#823F1D` | the editing border, a guide that will snap, Clarity: On |
+| `danger` | `#9A2818` | "Desktop full" |
+| `highlight` | `#E8D5AE` | selected text |
+
+Rules the values keep:
+
+- One hue family. `paper`, `ribbon` and the inks are hue 34 to 39°; only `accent` (20°) and
+  `danger` (7°) step out, and only to mark a state.
+- Text contrast (WCAG): `ink` on `paper` 12.9:1, `inkSoft` on `paper` 4.9:1, `ribbonInk` on
+  `ribbon` 6.9:1, `accent` on `ribbon` 4.6:1, `danger` on `ribbon` 4.6:1. Body text and every
+  ribbon label stay at 4.5:1 or more; only the placeholder (2.0:1) is meant to be faint.
+- `ribbon` against `paper` is 1.44:1: a visible band, not a separate color.
+- Lines and shades are `#5A4630` at an alpha, not black, so they tint the paper warm instead of
+  graying it.
+- The editing border uses `accent`, not the system accent color, which is blue for most people
+  and would bring the blue back.
+
+To add a color, add a token with its use, check its contrast against what it sits on, and add a
+row here.
 
 ## Synthesis decision
 
@@ -130,6 +173,9 @@ Later changes, after trying the app:
   version 1 sidecars keep it top-left. Hide all / Show all became a one-click button in the
   ribbon, and the count badge moved to the card area's bottom-right, into the ribbon only while
   Hide all has removed the card.
+- 2026-10-22, beige: the blue ribbon and white card became the warm palette in Color, so cards
+  stand apart from the white windows around them. The Hide all toggle's icon flipped to show the
+  current state instead of the action.
 
 ## Tradeoffs accepted
 

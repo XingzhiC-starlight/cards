@@ -6,7 +6,7 @@ description: Drive the real Cards macOS app (menu bar app, card windows, the sta
 # Verify Cards
 
 Cards is a native AppKit menu bar app: each card is a borderless window, the stack is one more
-window with a blue ribbon (New, Pop, Clarity, Hide all, ⋯), and every card is a Markdown file in a
+window with a tan ribbon (New, Pop, Clarity, Hide all, ⋯), and every card is a Markdown file in a
 folder plus a hidden sidecar `.cards.json`. This skill starts an isolated copy of the app on an
 empty temp folder and drives it through macOS Accessibility, by pid, so it never touches the
 owner's own Cards or `~/Documents/Cards`.

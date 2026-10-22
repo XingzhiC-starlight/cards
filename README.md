@@ -15,12 +15,12 @@ Requires macOS 15 or later and Xcode 26.
 
 Cards is a menu bar app, so it has no Dock icon. Look for the stacked-rectangles icon in the menu
 bar: it has Show All, Hide All, Open Stack, Settings… and Quit. **⌥⌘C** hides or shows every card
-from anywhere. Hide All leaves the stack's blue ribbon where the stack is, so New, Pop, Clarity
+from anywhere. Hide All leaves the stack's tan ribbon where the stack is, so New, Pop, Clarity
 and the menu stay in reach. Opening Cards again from Finder or Spotlight shows everything.
 
 On a MacBook with a crowded menu bar, macOS may hide the icon behind the camera notch. The stack's
-blue ribbon has what you need: the eye button hides or shows everything, and **⋯** at its right
-opens Settings… and Quit.
+tan ribbon has what you need: the eye button hides or shows everything (an open eye while cards
+show, a slashed eye while they are hidden), and **⋯** at its right opens Settings… and Quit.
 
 ## Build from the command line
 
@@ -41,7 +41,7 @@ xcodebuild test -project Cards.xcodeproj -scheme Cards -derivedDataPath build/De
 ## Where to paste the API key
 
 Summaries use the Anthropic API (model `claude-haiku-5-5`). Click the menu bar icon (or **⋯** on
-the stack's blue ribbon), choose **Settings…**, paste your key into **Anthropic API key**, and click **Save**.
+the stack's tan ribbon), choose **Settings…**, paste your key into **Anthropic API key**, and click **Save**.
 
 The key is stored in your login Keychain (service "Cards"), never in the project or the notes
 folder. Without a key everything works; collapsed cards just say "Summary unavailable". Debug
@@ -62,7 +62,7 @@ against another folder, pass `-CardsFolder /path/to/folder` as a launch argument
 | Make a card | **New** on the stack, or type on the stack's blank page |
 | Select a stacked card | Swipe left or right with two fingers on the stack, or click the thin band along its edge: right/bottom = next, left/top = previous |
 | Edit a stacked card | Click into it on the stack; it edits like any other card |
-| Bring a card out | Select it, then click **Pop** in the stack's blue ribbon |
+| Bring a card out | Select it, then click **Pop** in the stack's tan ribbon |
 | Move a card | Drag it by its title; it snaps to the nearest cell and swaps with whatever is there, or stays where you let go, even partly off the left, right or bottom edge |
 | Put a card back | Hover it and click **↩ Stack** |
 | Collapse to a summary | Hover a card and click the collapse button, or use **Clarity** on the stack for every card |

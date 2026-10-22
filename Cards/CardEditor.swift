@@ -51,8 +51,6 @@ extension LineKind {
 enum EditorStyle {
     static let header = NSFont.boldSystemFont(ofSize: 17)
     static let body = NSFont.systemFont(ofSize: 13)
-    static let textColor = NSColor(white: 0.1, alpha: 1)
-    static let markerColor = NSColor(white: 0.45, alpha: 1)
     /// Left indent of list paragraphs; the marker is drawn inside it.
     static let listIndent: CGFloat = 20
     /// Keeps the header's text clear of the hover buttons in the card's top-right corner.
@@ -81,7 +79,7 @@ enum EditorStyle {
         let paragraph = NSMutableParagraphStyle()
         paragraph.tailIndent = -headerTrailingSpace
         paragraph.paragraphSpacing = 6
-        return [.font: header, .foregroundColor: textColor, .paragraphStyle: paragraph]
+        return [.font: header, .foregroundColor: Palette.ink, .paragraphStyle: paragraph]
     }()
 
     static func bodyAttributes(kind: LineKind, style: Style) -> [NSAttributedString.Key: Any] {
@@ -91,7 +89,7 @@ enum EditorStyle {
             paragraph.firstLineHeadIndent = listIndent
             paragraph.headIndent = listIndent
         }
-        return [.font: font(for: style), .foregroundColor: textColor, .paragraphStyle: paragraph,
+        return [.font: font(for: style), .foregroundColor: Palette.ink, .paragraphStyle: paragraph,
                 .cardLine: kind.attributeValue]
     }
 }
@@ -174,6 +172,8 @@ final class CardTextView: NSTextView {
         usesFontPanel = false
         usesRuler = false
         drawsBackground = false
+        insertionPointColor = Palette.ink
+        selectedTextAttributes = [.backgroundColor: Palette.highlight]
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
         isAutomaticLinkDetectionEnabled = false
@@ -364,7 +364,7 @@ final class CardTextView: NSTextView {
         super.draw(dirtyRect)
         if string.isEmpty {
             let placeholder = NSAttributedString(string: "Title", attributes: [
-                .font: EditorStyle.header, .foregroundColor: NSColor(white: 0.7, alpha: 1),
+                .font: EditorStyle.header, .foregroundColor: Palette.inkFaint,
             ])
             placeholder.draw(at: NSPoint(x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0),
                                          y: textContainerOrigin.y))
@@ -376,10 +376,10 @@ final class CardTextView: NSTextView {
                 guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
                     .withSymbolConfiguration(.init(pointSize: 12, weight: .regular)) else { continue }
                 image.isTemplate = true
-                let tinted = image.tinted(EditorStyle.markerColor)
+                let tinted = image.tinted(Palette.inkSoft)
                 tinted.draw(in: marker.box)
             default:
-                let attributes: [NSAttributedString.Key: Any] = [.font: EditorStyle.body, .foregroundColor: EditorStyle.markerColor]
+                let attributes: [NSAttributedString.Key: Any] = [.font: EditorStyle.body, .foregroundColor: Palette.inkSoft]
                 let label = NSAttributedString(string: marker.label, attributes: attributes)
                 let size = label.size()
                 label.draw(at: NSPoint(x: marker.box.maxX - size.width, y: marker.baseline - EditorStyle.body.ascender))
