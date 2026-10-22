@@ -8,6 +8,11 @@ import Carbon.HIToolbox
 enum CardsApp {
     static func main() {
         let app = NSApplication.shared
+        // The test bundle runs inside this app.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            app.run()
+            return
+        }
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.accessory)

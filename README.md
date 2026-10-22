@@ -30,6 +30,12 @@ xcodebuild -project Cards.xcodeproj -scheme Cards -configuration Debug -derivedD
 open build/DerivedData/Build/Products/Debug/Cards.app
 ```
 
+Run the unit tests (they use the app as their host and never touch `~/Documents/Cards`):
+
+```bash
+xcodebuild test -project Cards.xcodeproj -scheme Cards -derivedDataPath build/DerivedData
+```
+
 ## Where to paste the API key
 
 Summaries use the Anthropic API (model `claude-haiku-5-5`). Click the menu bar icon (or **⋯** on
