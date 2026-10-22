@@ -5,8 +5,11 @@ import AppKit
 /// Its selected card is edited in place.
 final class StackWindow: NSWindow {
     private let stackView: StackView
+    private let send: (Command) -> Void
+    private var swipes = SwipeTracker()
 
     init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu) {
+        self.send = send
         stackView = StackView(send: send, menu: menu)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         configureAsCard(self)
@@ -14,6 +17,20 @@ final class StackWindow: NSWindow {
     }
 
     override var canBecomeKey: Bool { true }
+
+    /// A two-finger horizontal swipe flips the stack; a vertical one scrolls the card's text.
+    override func sendEvent(_ event: NSEvent) {
+        guard event.type == .scrollWheel else {
+            super.sendEvent(event)
+            return
+        }
+        switch swipes.feed(phase: event.phase, momentumPhase: event.momentumPhase,
+                           deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY, at: event.timestamp) {
+        case .pass: super.sendEvent(event)
+        case .consume: break
+        case .flip(let direction): send(.flipStack(direction))
+        }
+    }
 
     override func becomeKey() {
         super.becomeKey()
