@@ -143,7 +143,7 @@ extension Note {
         var out = ["# " + Note.escape(header)]
         if !body.isEmpty { out.append("") }
         for (line, number) in zip(body, numbers) {
-            let content = line.runs.map(Note.renderInline).joined()
+            let content = line.runs.map { Note.renderInline($0) }.joined()
             switch line.kind {
             case .text: out.append(Note.escapeLineStart(content))
             case .bullet: out.append("- " + content)
