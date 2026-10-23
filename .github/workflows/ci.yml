@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: xcodebuild -version
+      - run: xcodebuild test -project Cards.xcodeproj -scheme Cards -derivedDataPath build/DerivedData
+
+  desk-invariants:
+    name: Desk invariants
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Desk, Grid and Note match the reviewed fingerprint
+        run: .claude/skills/check-desk-invariants/run.sh --require-reviewed
+      - name: Every command sequence up to depth 3
+        run: .claude/skills/check-desk-invariants/run.sh
+      - name: Every mutant is caught
+        run: .claude/skills/check-desk-invariants/run.sh --mutants
+
+  package:
+    name: Disk image
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/package.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Cards-dmg
+          path: build/release/*.dmg
+          if-no-files-found: error

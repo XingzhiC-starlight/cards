@@ -4,6 +4,7 @@
 #   run.sh [DEPTH]        build against the current Cards/*.swift and check (default depth 3, ~10 s)
 #   run.sh --mutants      break the code eight known ways; each must be caught by its property
 #   run.sh --reviewed     record the current Desk/Grid/Note sources as reviewed against the properties
+#   run.sh --require-reviewed   fail while those sources differ from the reviewed ones (CI runs this)
 set -euo pipefail
 
 SKILL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -71,6 +72,7 @@ mutants() {
 case "${1:-}" in
   --mutants) mutants ;;
   --reviewed) fingerprint > "$REVIEWED"; echo "recorded $(wc -l < "$REVIEWED" | tr -d ' ') sources as reviewed" ;;
+  --require-reviewed) note="$(staleness)"; [[ -z "$note" ]] || { echo "$note"; exit 1; } ;;
   *)
     staleness
     build "$REPO/Cards" "$OUT/desk-check"

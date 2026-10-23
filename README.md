@@ -38,6 +38,10 @@ Run the unit tests (they use the app as their host and never touch `~/Documents/
 xcodebuild test -project Cards.xcodeproj -scheme Cards -derivedDataPath build/DerivedData
 ```
 
+GitHub Actions ([ci.yml](.github/workflows/ci.yml)) runs on every pull request and every push to
+`main`. It runs these tests, the desk invariant check and its mutants, and `scripts/package.sh`, and
+it keeps the disk image as a downloadable artifact named `Cards-dmg`.
+
 ## Share Cards with someone
 
 ```bash

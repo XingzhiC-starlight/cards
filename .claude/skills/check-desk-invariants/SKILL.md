@@ -94,6 +94,8 @@ unless the user asked for a fix.
     it are merged) and, if it is saved, to `layout()` in P5.
   - A changed rule? Update the property that states it, in the spec's words.
   - Then run `run.sh`, then `run.sh --mutants`, and only then `run.sh --reviewed`.
+  - CI runs `run.sh --require-reviewed` and fails until `reviewed.sha256` is recorded again, so
+    commit it with the change.
 - `run.sh --mutants` breaks `Desk.swift` eight known ways in a scratch copy under
   `build/desk-check/` (never the real file) and needs every property to catch its break. If a
   mutant's text no longer exists in `Desk.swift`, update that line in `MUTANTS` in `run.sh` to an
