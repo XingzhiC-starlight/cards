@@ -80,6 +80,12 @@ enum Command {
     case returnToStack(CardID)
     /// Click in one of the stack's edge bands or a two-finger swipe: move around the stack's loop.
     case flipStack(Direction)
+    /// The arranger moved a stacked card: it goes to `index` in the stack (0 is the top; past an
+    /// end lands at that end). The other cards keep their order and the stack keeps showing the
+    /// card, or the blank page, it showed. A card that is not stacked is ignored.
+    case arrange(CardID, at: Int)
+    /// The arranger's row: the stack shows this stacked card. A card that is not stacked is ignored.
+    case showStacked(CardID)
     /// The first character typed on the stack's blank page. Only meaningful while it shows.
     case writeBlank(Note, at: Date)
     /// A card's header or the stack's ribbon was dragged and released (`Place.dropped(at:)`).
@@ -123,12 +129,14 @@ struct Desk: Equatable {
     private(set) var popped: [PoppedCard]
     /// Where the stack window is. Top-right (`Slot.stackHome`) until moved.
     private(set) var stackPlace: Place
-    /// Top card first. Its order changes only when a card enters or leaves, never on a flip.
+    /// Top card first. Its order changes when a card enters or leaves and when the arranger moves
+    /// one (`Command.arrange`), never on a flip.
     private(set) var stack: [Card]
     /// The stack's loop position: the stacked card that shows, or `stack.count` for the blank
     /// page that closes the loop. Not persisted: a launch shows the top card (the blank page
     /// when the stack is empty). Every insert into or removal from `stack` goes through
-    /// `insertCard` / `removeCard`, which keep it on the same page.
+    /// `insertCard` / `removeCard`, which keep it on the same page; `arrange` keeps it on the
+    /// same card.
     private(set) var selection: Int
     /// Global clarity (the stack's Clarity button). Per-card state is `Card.collapsed`.
     private(set) var clarity: Bool
@@ -232,6 +240,8 @@ struct Desk: Equatable {
         case .pop: return pop()
         case .returnToStack(let id): returnToStack(id)
         case .flipStack(let direction): flipStack(direction)
+        case .arrange(let id, let index): arrange(id, at: index)
+        case .showStacked(let id): showStacked(id)
         case .writeBlank(let note, let date): writeBlank(note, at: date)
         case .move(let item, let place): move(item, to: place)
         case .delete(let id): delete(id)
@@ -283,6 +293,20 @@ struct Desk: Equatable {
         case .next: (selection + 1) % pages
         case .previous: (selection + pages - 1) % pages
         }
+    }
+
+    /// Not built from `removeCard` / `insertCard`: those keep the *page*, so moving the shown card
+    /// would advance the stack to the card under it. A move keeps the shown *card*.
+    private mutating func arrange(_ id: CardID, at index: Int) {
+        guard let from = stack.firstIndex(where: { card in card.id == id }) else { return }
+        let to = min(max(index, 0), stack.count - 1)
+        let shown = selectedCard?.id
+        stack.insert(stack.remove(at: from), at: to)
+        if let shown, let i = stack.firstIndex(where: { card in card.id == shown }) { selection = i }
+    }
+
+    private mutating func showStacked(_ id: CardID) {
+        if let i = stack.firstIndex(where: { card in card.id == id }) { selection = i }
     }
 
     /// The first character typed on the blank page: it becomes a card at the bottom, in the same
@@ -405,9 +429,18 @@ enum SummaryFace: Equatable {
     case unavailable(reason: String)
 }
 
+/// One line of the stack arranger: a stacked card and the title its row shows.
+struct StackRow: Equatable {
+    let id: CardID
+    /// `Note.title`: the header, or "Untitled" when it is empty.
+    let title: String
+}
+
 struct StackFace: Equatable {
-    /// Real cards only, never the blank page.
-    let count: Int
+    /// The stacked cards, top first. Real cards only, never the blank page.
+    let stacked: [StackRow]
+    /// What the badge shows. Derived, so it can never disagree with the arranger's rows.
+    var count: Int { stacked.count }
     /// The card the stack shows; nil is the blank page.
     let selected: CardFace?
     let clarity: Bool
@@ -422,7 +455,8 @@ extension Desk {
     }
 
     func stackFace(hasKey: Bool) -> StackFace {
-        StackFace(count: stack.count, selected: selectedCard.map { Desk.face(of: $0, hasKey: hasKey) },
+        StackFace(stacked: stack.map { StackRow(id: $0.id, title: $0.note.title) },
+                  selected: selectedCard.map { Desk.face(of: $0, hasKey: hasKey) },
                   clarity: clarity, desktopFull: firstFreeSlot == nil)
     }
 

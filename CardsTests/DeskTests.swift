@@ -222,6 +222,125 @@ final class DeskTests: XCTestCase {
         XCTAssertNil(desk.place(of: .card(popped)), "it left the desktop")
     }
 
+    func testArrangingPutsOneCardAtTheIndexAndTheOthersKeepTheirOrder() {
+        var desk = deskWithStack("a", "b", "c", "d")
+        desk.apply(.arrange(id("c"), at: 0))
+        XCTAssertEqual(stackOrder(desk), ["c", "a", "b", "d"], "c goes to the top and the rest keep their order")
+        desk.apply(.arrange(id("c"), at: 3))
+        XCTAssertEqual(stackOrder(desk), ["a", "b", "d", "c"], "and to the bottom")
+        desk.apply(.arrange(id("d"), at: 1))
+        XCTAssertEqual(stackOrder(desk), ["a", "d", "b", "c"], "and into the middle, moving up")
+        desk.apply(.arrange(id("a"), at: 2))
+        XCTAssertEqual(stackOrder(desk), ["d", "b", "a", "c"], "and into the middle, moving down")
+    }
+
+    func testArrangingClampsAnIndexPastEitherEnd() {
+        var desk = deskWithStack("a", "b", "c")
+        desk.apply(.arrange(id("b"), at: -4))
+        XCTAssertEqual(stackOrder(desk), ["b", "a", "c"], "before the top is the top")
+        desk.apply(.arrange(id("b"), at: 99))
+        XCTAssertEqual(stackOrder(desk), ["a", "c", "b"], "past the bottom is the bottom")
+    }
+
+    func testArrangingKeepsTheSameCardShowingWhereverItGoes() {
+        var desk = deskWithStack("a", "b", "c")
+        desk.apply(.flipStack(.next))
+        XCTAssertEqual(shown(desk), "b", "b shows")
+        desk.apply(.arrange(id("a"), at: 2))
+        XCTAssertEqual(stackOrder(desk), ["b", "c", "a"], "a went below b")
+        XCTAssertEqual(shown(desk), "b", "b still shows, now from the top")
+        desk.apply(.arrange(id("b"), at: 2))
+        XCTAssertEqual(stackOrder(desk), ["c", "a", "b"], "the shown card itself moved")
+        XCTAssertEqual(shown(desk), "b", "and the stack went with it")
+        desk.apply(.arrange(id("c"), at: 1))
+        XCTAssertEqual(shown(desk), "b", "a card passing over it changes nothing")
+    }
+
+    func testArrangingKeepsTheBlankPageShowing() {
+        var desk = deskWithStack("a", "b", "c")
+        desk.apply(.flipStack(.previous))
+        XCTAssertEqual(shown(desk), "blank", "the blank page shows")
+        desk.apply(.arrange(id("c"), at: 0))
+        XCTAssertEqual(stackOrder(desk), ["c", "a", "b"], "the card moved")
+        XCTAssertEqual(shown(desk), "blank", "and the blank page still shows")
+        XCTAssertEqual(tour(desk, .next, 1), ["c"], "its loop is still the whole stack")
+    }
+
+    func testArrangingACardThatIsNotStackedOrAlreadyThereChangesNothing() {
+        var desk = deskWithStack("a", "b", "c")
+        desk.apply(.flipStack(.next))
+        let popped = desk.apply(.pop)!
+        let before = desk
+        desk.apply(.arrange(popped, at: 0))
+        XCTAssertEqual(desk, before, "a card on the desktop is not in the arranger's list")
+        desk.apply(.arrange(id("ghost"), at: 0))
+        XCTAssertEqual(desk, before, "nor is a card that does not exist")
+        desk.apply(.arrange(id("c"), at: 1))
+        XCTAssertEqual(desk, before, "a move to the card's own place is no move")
+        var alone = deskWithStack("a")
+        let aloneBefore = alone
+        alone.apply(.arrange(id("a"), at: 5))
+        XCTAssertEqual(alone, aloneBefore, "a single card has nowhere to go")
+    }
+
+    func testArrangingChangesNothingButTheOrder() {
+        var desk = fullDesktop(stack: "x", "y", "z")
+        desk.apply(.toggleClarity)
+        let before = desk
+        desk.apply(.arrange(id("z"), at: 0))
+        XCTAssertEqual(desk.popped, before.popped, "the desktop is as it was")
+        XCTAssertEqual(desk.stackPlace, before.stackPlace, "so is the stack's place")
+        XCTAssertEqual(desk.clarity, before.clarity, "and Clarity")
+        XCTAssertEqual(desk.stack.sorted { $0.id < $1.id }, before.stack.sorted { $0.id < $1.id },
+                       "every stacked card keeps its text, state and summary")
+    }
+
+    func testTheArrangedOrderIsWhatTheSidecarSavesAndALaunchReads() {
+        var desk = deskWithStack("a", "b", "c")
+        desk.apply(.arrange(id("c"), at: 0))
+        XCTAssertEqual(desk.saved.stack, [id("c"), id("a"), id("b")], "the sidecar lists the new order")
+        let relaunched = Desk(notes: notes(["a", "b", "c"]), saved: desk.saved)
+        XCTAssertEqual(stackOrder(relaunched), ["c", "a", "b"], "a launch reads it back")
+        XCTAssertEqual(shown(relaunched), "c", "and shows the new top card")
+    }
+
+    func testShowingAStackedCardTurnsTheStackToItWithoutReordering() {
+        var desk = deskWithStack("a", "b", "c")
+        desk.apply(.showStacked(id("c")))
+        XCTAssertEqual(shown(desk), "c", "the stack shows c")
+        XCTAssertEqual(stackOrder(desk), ["a", "b", "c"], "the order is untouched")
+        XCTAssertEqual(tour(desk, .next, 2), ["blank", "a"], "and the loop carries on from there")
+        desk.apply(.flipStack(.next))
+        desk.apply(.showStacked(id("b")))
+        XCTAssertEqual(shown(desk), "b", "a card shows from any page, the blank one included")
+    }
+
+    func testShowingACardThatIsNotStackedChangesNothing() {
+        var desk = deskWithStack("a", "b")
+        desk.apply(.flipStack(.next))
+        let popped = desk.apply(.pop)!
+        let before = desk
+        desk.apply(.showStacked(popped))
+        XCTAssertEqual(desk, before, "a card on the desktop is not shown by the stack")
+        desk.apply(.showStacked(id("ghost")))
+        XCTAssertEqual(desk, before, "nor is one that does not exist")
+    }
+
+    func testTheFaceListsStackedCardsTopFirstWithTheirTitles() {
+        var desk = Desk(notes: [id("a"): note("Alpha"), id("b"): note(""), id("c"): note("Gamma")],
+                        saved: SavedDesk(stack: [id("c"), id("a"), id("b")]))
+        desk.apply(.flipStack(.next))
+        let rows = desk.stackFace(hasKey: false).stacked
+        XCTAssertEqual(rows.map(\.id), [id("c"), id("a"), id("b")], "top first")
+        XCTAssertEqual(rows.map(\.title), ["Gamma", "Alpha", "Untitled"], "an empty header reads Untitled")
+        desk.apply(.pop)
+        XCTAssertEqual(desk.stackFace(hasKey: false).stacked.map(\.id), [id("c"), id("b")], "a popped card is not listed")
+        desk.apply(.flipStack(.previous))
+        desk.apply(.flipStack(.previous))
+        XCTAssertEqual(shown(desk), "blank", "the blank page shows")
+        XCTAssertEqual(desk.stackFace(hasKey: false).stacked.count, 2, "and has no row")
+    }
+
     func testLaunchShowsTheTopCardOrTheBlankPageWhenEmpty() {
         XCTAssertEqual(shown(deskWithStack("a", "b")), "a", "the top card shows at launch")
         XCTAssertEqual(shown(Desk(notes: [:], saved: SavedDesk())), "blank", "an empty stack shows the blank page")

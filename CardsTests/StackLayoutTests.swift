@@ -39,7 +39,8 @@ final class StackLayoutTests: XCTestCase {
                                  drag: WindowDrag(moved: { _ in }, dropped: { _ in }))
         let card = CardFace(id: CardID(rawValue: "a"), note: Note(header: "Title", body: []), collapsed: false,
                             summary: .body(""))
-        let face = StackFace(count: 12, selected: card, clarity: clarity, desktopFull: full)
+        let rows = (1...12).map { StackRow(id: CardID(rawValue: "row\($0)"), title: "Card \($0)") }
+        let face = StackFace(stacked: rows, selected: card, clarity: clarity, desktopFull: full)
         window.apply(face, cell: CGRect(x: 0, y: 0, width: width, height: (width * 0.78).rounded()), visibility: visibility)
         window.contentView!.layoutSubtreeIfNeeded()
         return Stack(window: window, toggled: { toggles }, sent: { commands })
