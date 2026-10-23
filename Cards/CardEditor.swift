@@ -324,12 +324,10 @@ final class CardTextView: NSTextView {
         super.deleteBackward(sender)
     }
 
-    /// An edit that adds or removes a line break starts its own undo step, so the tidy it causes
-    /// lands in the same step instead of after typing that coalesced before it.
+    /// An edit that removes a line break starts its own undo step, so the tidy it may cause lands
+    /// in that step instead of after typing that coalesced before it.
     override func shouldChangeText(in range: NSRange, replacementString: String?) -> Bool {
-        if let replacementString, replacementString.contains("\n") || (string as NSString).substring(with: range).contains("\n") {
-            breakUndoCoalescing()
-        }
+        if replacementString != nil, (string as NSString).substring(with: range).contains("\n") { breakUndoCoalescing() }
         return super.shouldChangeText(in: range, replacementString: replacementString)
     }
 
@@ -684,6 +682,9 @@ final class CardTextView: NSTextView {
         case .reshape(let shapes):
             undoStep(name) { applyShapes(shapes) }
         case .splitLine(let shape):
+            // The new line inherits the current line's shape, so usually Enter is plain typing and
+            // coalesces with the typing around it, as it did before levels.
+            guard shape != (caretLine().map { bodyShapes()[$0] } ?? .plain) else { return system() }
             undoStep(name) {
                 system()
                 guard let line = caretLine() else { return }
