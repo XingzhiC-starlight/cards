@@ -40,7 +40,8 @@ func send(_ command: Command) {
 | --- | --- |
 | `Desk.swift` | the state, `Command`, every rule (pop, flip, swap, clarity, restore), and Hide all's `Visibility` |
 | `Grid.swift` | slots, free positions, the snap rule, the overhang limit, frames and edge bands (pure) |
-| `Note.swift` | a card's content, its Markdown format, and the typing rules for lists |
+| `Note.swift` | a card's content, its Markdown format, the typing rules for lists, and the level tidy-up |
+| `Clipboard.swift` | copy and paste formats: a run of lines to and from Markdown text and HTML lists (pure) |
 | `DeskController.swift` | the single owner of the desk and of every window |
 | `Library.swift` | `~/Documents/Cards/*.md` and the hidden sidecar `.cards.json` |
 | `Summarizer.swift` | summary requests and the one Anthropic call |
@@ -90,6 +91,20 @@ func send(_ command: Command) {
 - **Editor.** TextKit 1. The text storage holds exactly the note's text. A body line's list kind
   is a paragraph attribute and its marker is drawn in the indent, so a marker can never be
   half-deleted. Paragraph 0 is restyled as the header after every change.
+- **A level is part of the line.** `Line` carries `level` (0 to 2) beside its kind; plain lines are
+  always 0. The editor stores it in the same paragraph attribute as the kind, and the indent and
+  the bullet shape derive from it. One pure function, `tidyLevels`, is the whole nesting rule: no
+  item more than one level deeper than the list item above it, level 0 after a plain line, never
+  past 2. Every edit, every file read and every paste end with it, so no path needs its own
+  orphan handling. `listNumbers` counts per parent: a deeper run restarts at 1 and the parent's
+  run resumes after it. Tab, Shift-Tab, and Enter or Backspace on a nested item are pure
+  decisions in `Typing`, like the existing list rules; a move takes the item and every deeper
+  line after it as one block, and is refused whole if any line would pass level 2.
+- **The clipboard is a file boundary.** Copy and paste go through `Clipboard`, not the text
+  view's own RTF: copy writes the selected lines as the card file's Markdown (sharing `Note`'s
+  writer) plus an HTML nested list; paste reads an HTML list if one is there, else the plain text
+  through `Note`'s reader with extra bullet marks (`•◦▪·‣`, `1)`). The result is a run of `Line`s
+  that the editor splices in at the caret, then tidies, as one undo step.
 - **Summaries.** A summary records the fingerprint of the note it describes; it is fresh only
   while that matches. Spinner, failure and "no key" are derived, not stored as flags.
 
@@ -206,6 +221,10 @@ Later changes, after trying the app:
   hover row, where a desktop card has "↩ Stack", so every card's buttons sit in one row. The
   ribbon is New and Clarity. Clarity lost its "On" and "Off" and shows its state by text color
   (`inkSoft` off, `accent` on), with the state in its tooltip and accessibility value.
+- 2026-10-23, nested lists: list items gained a level (up to three), moved with Tab and
+  Shift-Tab and saved as 4 spaces per level. Copy now writes Markdown and HTML lists, and paste
+  reads them back, including lists copied from the Claude app or a terminal. Markers stay drawn,
+  not typed; the clipboard puts them back as text.
 
 ## Tradeoffs accepted
 
@@ -226,7 +245,11 @@ Later changes, after trying the app:
 - **Normalized store** (`[CardID: Card]` plus slot, stack, collapsed and summary maps): every
   transition must keep several keyed structures in agreement.
 - **Literal marker characters** in the text: native-feeling copy/paste, but the user can edit a
-  marker out of sync and every edit needs a renumbering pass that shifts the selection.
+  marker out of sync and every edit needs a renumbering pass that shifts the selection. Copy and
+  paste get the markers from `Clipboard` instead.
+- **Nesting as a tree** (`Line` with children): moving a block would be one splice, but every
+  editor paragraph would need a path, and the text view is flat. A level per line plus
+  `tidyLevels` keeps the flat model.
 
 ## Spec gaps resolved
 
@@ -251,3 +274,5 @@ Later changes, after trying the app:
   desktop, keeping the old ceiling.
 - The guide window sits above the dragged card and ignores the mouse; a swap target shows the
   same outline as an empty slot.
+- Tab where no item can nest (the header, a plain line, a list's first item) types a tab
+  character, as before nesting existed. Paste and Match Style is not offered.

@@ -1,4 +1,4 @@
-# Cards — prototype spec (agreed 2026-10-21, revised 2026-10-22)
+# Cards — prototype spec (agreed 2026-10-21, revised 2026-10-23)
 
 Personal-use macOS prototype. Native Swift app built with Xcode.
 
@@ -80,12 +80,33 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 ## Card content and editing
 - Applies to popped cards and to the selected stacked card alike.
 - First line (first paragraph) is automatically the bold level-1 header, regardless of formatting.
-- Body formatting: bold, italic, bullet list, numbered list, checkboxes. Nothing else.
-- Apply via ⌘B / ⌘I; typing `- `, `1. `, `[] ` starts lists; Enter continues a list, Enter on an empty item ends it.
+- Body formatting: bold, italic, bullet list, numbered list, checkboxes, and list items nested up to three levels (see Nested lists). Nothing else (revised 2026-10-23).
+- Apply via ⌘B / ⌘I; typing `- `, `1. `, `[] ` starts lists; Enter continues a list, Enter on an empty top-level item ends it.
 - A five-button formatting bar appears along the bottom of a card only while editing.
 - Scroll wheel/trackpad scrolls whichever card the pointer is over. The card being edited has a stronger border.
 - Per-card buttons (clarity toggle, summary refresh, ↩ Stack, trash) fade in on hover only. Trash asks "Delete this card?". The stacked card has every one of them, with ↗ Pop where a popped card has ↩ Stack (revised 2026-10-22).
 - New: creates a blank card and pops it straight out, cursor on the header line, always expanded. Desktop full → New shows the stack's blank page instead.
+
+## Nested lists (new 2026-10-23)
+- Bullet, numbered and checkbox items nest under one another, any kind under any kind, at most 3 levels deep. Only list items have levels: plain lines and the header always sit at the left edge.
+- Each level indents 20pt further. Bullets are `•`, `◦`, `▪` by level; numbers and checkboxes look the same at every level.
+- A nested numbered run restarts at 1 under its parent, and the parent's count continues past its children. Every level uses `1.` style.
+- Tab moves the item (or every selected item) one level deeper, Shift-Tab one level up, each carrying all of its children. Tab does nothing if any part would pass level 3, or if the item has no list item above it at the same level or deeper to sit under, so a level is never skipped. Shift-Tab on a top-level item turns it into plain text.
+- On the header, a plain line, or the first item of a list, Tab types a tab character as before.
+- Enter on an empty nested item, or Backspace at the very start of one, moves it up one level. At the top level both behave as before.
+- Changing an item's kind changes only that line; ticking a parent checkbox leaves its children alone.
+- After every edit, no item sits more than one level deeper than the list item above it, and an item right after a plain line is at the top level. Children left without a parent (a deleted line, a parent turned plain, undo) move up just enough to fit.
+- Each Tab, Shift-Tab or paste, with any tidying it causes, is one undo step.
+- In the card file each level is 4 spaces of indent. When reading, a list line indented further than the list item above it is that item's child; a tab counts as 4 spaces; depth is tidied as above. Indented plain lines stay plain with their spaces. Existing files with indented list lines therefore load nested, and are rewritten with 4-space indents on their next save.
+- The summary prompt shows each level as 2 spaces of indent.
+
+## Copy and paste (new 2026-10-23)
+- Copy puts two forms on the clipboard: the card file's Markdown (markers, 4 spaces per level, `**bold**`, `*italic*`) and HTML with real nested `<ul>`/`<ol>` lists, so Notes, Mail and Docs paste a list and Markdown apps paste Markdown.
+- A selection inside one line copies just its text. A selection crossing a line break copies every line it touches with its marker; levels count from the shallowest copied item, and a copied header becomes `# Title`.
+- Paste reads HTML first when it holds a list (a selection in the Claude app, web pages, Notes); otherwise the plain text is read as Markdown, also accepting `•` `◦` `▪` `·` `‣` bullets and `1)` numbering (terminal output such as Claude Code's).
+- From HTML: list items, nesting, ordered vs unordered, checkboxes, bold and italic are kept. Headings, links, code and table cells become plain lines with their text; images are dropped.
+- A paste with no line break is inserted as typed text and never starts a list.
+- A multi-line paste: on an empty line, the first pasted line replaces it (kind and level); inside text, the first pasted line's text joins the current line, which keeps its kind. Later lines keep their own kinds, shifted by the current item's level, and anything past level 3 is tidied up. Pasting into the header puts the first line in the header and the rest in the body.
 
 ## Clarity mode
 - Collapsed card: same size and position, header stays, body replaced by the 2-line AI summary in a lighter style. Applies on the stack too.
