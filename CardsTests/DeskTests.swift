@@ -8,6 +8,11 @@ final class DeskTests: XCTestCase {
 
     private func note(_ header: String) -> Note { Note(header: header, body: []) }
 
+    /// A note with enough body to want a summary.
+    private func longNote(_ header: String) -> Note {
+        Note(header: header, body: ["one", "two"].map { Line(runs: [Run(text: $0)]) })
+    }
+
     private func notes(_ names: [String]) -> [CardID: Note] {
         Dictionary(uniqueKeysWithValues: names.map { (id($0), note($0)) })
     }
@@ -281,5 +286,27 @@ final class DeskTests: XCTestCase {
         XCTAssertNil(desk.allCards[0].summary, "a summary of the note as it was before the edit is dropped")
         desk.apply(.storeSummary(id("a"), Summary(source: after.digest, outcome: .text("new"))))
         XCTAssertEqual(desk.allCards[0].summary?.outcome, .text("new"), "a summary of the current note is kept")
+    }
+
+    func testForgettingFailedSummariesMakesThoseCardsTryAgainAndKeepsTheTextOnes() {
+        let reason = "HTTP 401: invalid x-api-key"
+        let outcomes: [(String, Summary.Outcome)] = [
+            ("a", .failed(reason: reason)), ("b", .text("kept")), ("c", .failed(reason: reason)), ("d", .text("kept"))]
+        var desk = Desk(
+            notes: Dictionary(uniqueKeysWithValues: outcomes.map { (id($0.0), longNote($0.0)) }),
+            saved: SavedDesk(placements: [SavedPlacement(slot: 0, card: id("a")), SavedPlacement(slot: 1, card: id("b"))],
+                             stack: [id("c"), id("d")]))
+        for (name, outcome) in outcomes {
+            desk.apply(.storeSummary(id(name), Summary(source: longNote(name).digest, outcome: outcome)))
+        }
+        func face(_ name: String) -> SummaryFace {
+            Desk.summaryFace(of: desk.allCards.first { $0.id == id(name) }!, hasKey: true)
+        }
+        XCTAssertEqual(face("a"), .unavailable(reason: reason), "a failed summary stays for as long as nothing forgets it")
+        desk.apply(.forgetFailedSummaries)
+        XCTAssertEqual(face("a"), .loading, "a popped card whose summary failed tries again")
+        XCTAssertEqual(face("c"), .loading, "so does a stacked one")
+        XCTAssertEqual(face("b"), .text("kept"), "a popped card's summary that worked stays")
+        XCTAssertEqual(face("d"), .text("kept"), "and so does a stacked one's")
     }
 }

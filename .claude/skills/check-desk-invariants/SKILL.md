@@ -23,14 +23,14 @@ a launch builds them:
 - `near full`: 17 snapped cards plus one free card over an occupied slot, so Pop's 19-card
   ceiling is two steps away.
 
-From each desk it applies every command in its list to every reachable desk, breadth-first, up
-to the depth (default 3), and skips desks it has already seen. The commands are New, Pop, both
-flips, typing on the blank page (and an empty note), Clarity, ↩ Stack for the first two and the
-last desktop card, drags of the stack and the first desktop card (onto each other's slot, the
-first free slot, slot 12, a free point and one past the right edge, and their own place), and,
-for each named card: delete, edit, per-card collapse, refresh, a current summary, a stale summary
-and a failed one. It also tries folder rescans (unchanged, the shown card's file gone, a file
-edited, a file added), and a delete and a ↩ Stack for an id that does not exist.
+From each desk it applies every command in its list to every reachable desk, breadth-first, up to
+the depth (default 3), and skips desks it has already seen. The commands are New, Pop, both flips,
+typing on the blank page (and an empty note), Clarity, forgetting failed summaries, ↩ Stack for
+the first two and the last desktop card, drags of the stack and the first desktop card (onto each
+other's slot, the first free slot, slot 12, a free point and one past the right edge, and their
+own place), and, for each named card: delete, edit, per-card collapse, refresh, a current summary,
+a stale summary and a failed one. It also tries folder rescans (unchanged, the shown card's file
+gone, a file edited, a file added), and a delete and a ↩ Stack for an id that does not exist.
 
 After every step it checks:
 

@@ -59,7 +59,7 @@ func commands(_ desk: Desk) -> [Command] {
 
     var list: [Command] = [.new(at: now), .pop, .flipStack(.next), .flipStack(.previous),
                            .writeBlank(note("W", "typed"), at: now), .writeBlank(.blank, at: now),
-                           .toggleClarity, .delete(ghost), .returnToStack(ghost)]
+                           .toggleClarity, .forgetFailedSummaries, .delete(ghost), .returnToStack(ghost)]
     for id in popped { list.append(.returnToStack(id)) }
 
     // Drops, for the stack and the first desktop card: onto the other one's slot when it is
@@ -138,7 +138,8 @@ func checkStep(_ before: Desk, _ command: Command, _ after: Desk, arrived: CardI
         expected = beforeIDs.union(added)
     case .delete(let id): expected = beforeIDs.subtracting([id])
     case .syncFiles(let files): expected = Set(files.keys)
-    case .pop, .returnToStack, .flipStack, .move, .edit, .setCollapsed, .toggleClarity, .refreshSummary, .storeSummary:
+    case .pop, .returnToStack, .flipStack, .move, .edit, .setCollapsed, .toggleClarity, .refreshSummary,
+         .forgetFailedSummaries, .storeSummary:
         expected = beforeIDs
     }
     if afterIDs != expected {
