@@ -31,11 +31,7 @@ final class Library {
     /// Creates the folder if needed, reads every card file and the sidecar, rebuilds the desk.
     /// A missing or corrupt sidecar is not an error: every card simply starts in the stack.
     func load() -> Desk {
-        do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        } catch {
-            log("Could not create \(folder.path): \(error.localizedDescription)")
-        }
+        createFolder()
         let notes = (try? readNotes()) ?? [:]
         let saved = (try? Data(contentsOf: sidecarURL))
             .flatMap { try? JSONDecoder().decode(SavedDesk.self, from: $0) } ?? SavedDesk()
@@ -56,12 +52,7 @@ final class Library {
     @discardableResult
     func save(_ desk: Desk) -> Bool {
         if !FileManager.default.fileExists(atPath: folder.path) {
-            do {
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            } catch {
-                log("Could not create \(folder.path): \(error.localizedDescription)")
-                return false
-            }
+            guard createFolder() else { return false }
             notesOnDisk = [:]
             savedOnDisk = nil
         }
@@ -111,6 +102,17 @@ final class Library {
         guard let notes = try? readNotes() else { return nil }
         notesOnDisk = notes
         return notes
+    }
+
+    @discardableResult
+    private func createFolder() -> Bool {
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            return true
+        } catch {
+            log("Could not create \(folder.path): \(error.localizedDescription)")
+            return false
+        }
     }
 
     private var sidecarURL: URL { folder.appending(path: ".cards.json") }
