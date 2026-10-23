@@ -18,6 +18,13 @@ dmg="$OUT/Cards-$version.dmg"
 
 codesign --verify --deep --strict --verbose=2 "$APP"
 
+# A debuggable build lets any program running as the user read the API key out of Cards' memory.
+signature="$(codesign -dv "$APP" 2>&1)"
+[[ "$signature" == *"flags="*"runtime"* ]] || die "Cards is not signed with the hardened runtime"
+entitlements="$(codesign -d --entitlements - "$APP" 2>/dev/null)"
+[[ "$entitlements" != *get-task-allow* ]] || die "Cards carries the get-task-allow debug entitlement"
+echo "signing: hardened runtime, not debuggable"
+
 archs="$(lipo -archs "$APP/Contents/MacOS/Cards")"
 for arch in arm64 x86_64; do
   [[ " $archs " == *" $arch "* ]] || die "Cards has no $arch slice (found: $archs)"
