@@ -37,14 +37,6 @@ extension LineKind {
         default: .text
         }
     }
-
-    /// Bullet, numbered and checkbox, ignoring whether a checkbox is ticked.
-    func sameList(as other: LineKind) -> Bool {
-        switch (self, other) {
-        case (.todo, .todo): true
-        default: self == other
-        }
-    }
 }
 
 /// Fonts and paragraph styles, in one place.
@@ -270,13 +262,16 @@ final class CardTextView: NSTextView {
         }
         let paragraph = currentParagraph()
         let content = contentLength(of: paragraph)
-        switch Typing.onReturn(kind: kind(ofParagraph: paragraph), isEmpty: content == 0,
-                               isHeader: paragraph.location == 0) {
-        case .endList:
-            setKind(.text, paragraphs: [paragraph])
-        case .newLine(let newKind):
+        let body = allParagraphs().dropFirst()
+        let line = paragraph.location == 0 ? nil : body.firstIndex(of: paragraph).map { $0 - 1 }
+        switch Typing.onReturn(body.map { LineShape(kind: kind(ofParagraph: $0)) }, at: line, isEmpty: content == 0) {
+        case .reshape(let shapes):
+            setKind(shapes[line ?? 0].kind, paragraphs: [paragraph])
+        case .splitLine(let shape):
             super.insertNewline(sender)
-            setKind(newKind, paragraphs: [currentParagraph()])
+            setKind(shape.kind, paragraphs: [currentParagraph()])
+        case .system, .nothing:
+            super.insertNewline(sender)
         }
     }
 
@@ -402,7 +397,7 @@ final class CardTextView: NSTextView {
         guard let layoutManager, let textContainer else { return [] }
         let paragraphs = allParagraphs().dropFirst()
         let kinds = paragraphs.map(kind(ofParagraph:))
-        let numbers = listNumbers(kinds)
+        let numbers = listNumbers(kinds.map { LineShape(kind: $0) })
         let left = textContainerOrigin.x + textContainer.lineFragmentPadding
         var result: [Marker] = []
         for ((paragraph, kind), number) in zip(zip(paragraphs, kinds), numbers) where kind.isList {
