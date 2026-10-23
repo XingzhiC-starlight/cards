@@ -37,8 +37,9 @@ struct Card: Equatable {
 }
 
 /// One summary attempt for one version of a note. A failure is kept like a success, so the card
-/// shows "Summary unavailable" until the note changes or the user presses refresh. Only `.text`
-/// outcomes are persisted (see `SavedSummary`), so a relaunch retries failures.
+/// shows "Summary unavailable" until the note changes, the user presses refresh, or the key
+/// changes. Only `.text` outcomes are persisted (see `SavedSummary`), so a relaunch retries
+/// failures.
 struct Summary: Equatable {
     let source: Digest
     let outcome: Outcome
@@ -94,6 +95,8 @@ enum Command {
     case toggleClarity
     /// Per-card refresh button: forget the summary so a new one is requested now.
     case refreshSummary(CardID)
+    /// Settings saved or removed the key: forget every failed summary so each card tries again.
+    case forgetFailedSummaries
     /// A summary request finished. Dropped if the note changed while it was in flight.
     case storeSummary(CardID, Summary)
     /// A rescan of the folder found this set of notes (files added, removed or edited outside).
@@ -236,6 +239,7 @@ struct Desk: Equatable {
         case .setCollapsed(let id, let collapsed): update(id) { $0.collapsed = collapsed }
         case .toggleClarity: toggleClarity()
         case .refreshSummary(let id): update(id) { $0.summary = nil }
+        case .forgetFailedSummaries: forgetFailedSummaries()
         case .storeSummary(let id, let summary):
             update(id) { card in if summary.source == card.digest { card.summary = summary } }
         case .syncFiles(let notes): syncFiles(notes)
@@ -327,6 +331,15 @@ struct Desk: Equatable {
         clarity.toggle()
         for i in popped.indices { popped[i].card.collapsed = clarity }
         for i in stack.indices { stack[i].collapsed = clarity }
+    }
+
+    /// Clears the summary of every card, popped and stacked, whose latest attempt failed.
+    private mutating func forgetFailedSummaries() {
+        func forget(_ card: inout Card) {
+            if case .failed? = card.summary?.outcome { card.summary = nil }
+        }
+        for i in popped.indices { forget(&popped[i].card) }
+        for i in stack.indices { forget(&stack[i]) }
     }
 
     /// Makes the card set equal a fresh read of the folder. Gone files remove their card (and

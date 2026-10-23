@@ -110,10 +110,7 @@ final class DeskController {
     }
 
     /// Settings saved or removed the key.
-    func apiKeyChanged() {
-        summarizer.sync(desk.allCards, typing: nil)
-        render()
-    }
+    func apiKeyChanged() { send(.forgetFailedSummaries) }
 
     /// Save now: on deactivate, quit, and before a rescan. False when the folder doesn't match the desk.
     @discardableResult

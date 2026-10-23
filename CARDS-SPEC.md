@@ -84,7 +84,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 ## AI summaries
 - Provider: Anthropic API, model Claude Haiku 5.5. API key pasted once into the app's settings, stored outside the code.
 - Every card gets one, stacked or popped, under the same rules.
-- Trigger: a few seconds after typing stops; cached with the card; regenerated only on content change; per-card refresh button.
+- Trigger: a few seconds after typing stops; cached with the card; regenerated only on content change; per-card refresh button. A new or removed API key retries every failed summary.
 - No summary for empty or one-line bodies.
 - Prompt: header + body in → at most two short sentences (~25 words), no preamble, same language as the card.
 - While generating: small spinner in the summary area. On failure: "Summary unavailable", hover shows the reason.
