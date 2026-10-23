@@ -170,7 +170,7 @@ enum Clipboard {
             return indent + digits + ". " + rest.dropFirst(digits.count + 2)
         }
         let hashes = rest.prefix { $0 == "#" }
-        if hashes.count <= 6, gap(rest.dropFirst(hashes.count).first), !hashes.isEmpty {
+        if (1...6).contains(hashes.count), gap(rest.dropFirst(hashes.count).first) {
             return Note.escapeLineStart(String(rest.dropFirst(hashes.count + 1)))
         }
         return indent + rest
