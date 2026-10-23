@@ -67,7 +67,7 @@ whenever a step fails or anything looks off. It must print `healthy` before any 
 | `cv ax text [WINDOW]` | The text of each text area, one JSON string per line |
 | `cv ax focus WINDOW` | A real click into that card's text (activates Cards) |
 | `cv ax type 'TEXT'` | Key events to the app; `\n` is Return |
-| `cv ax key COMBO` | One key: `cmd+b`, `cmd+i`, `return`, `escape`, `delete`, arrows… |
+| `cv ax key COMBO` | One key: `cmd+b`, `cmd+z`, `tab`, `shift+tab`, `return`, `delete`, arrows (`shift+down`, `cmd+left`)…; a `cmd+` combo activates Cards first, since menu shortcuts need it |
 | `cv ax click WINDOW FX FY` | A real mouse click at a fraction of the window (0..1 from top-left) |
 | `cv ax scroll WINDOW DX DY` | One scroll-wheel event over the window |
 | `cv ax drag WINDOW FX FY DX DY` | Press at a fraction of the window, drag by DX,DY points, release |
@@ -104,6 +104,22 @@ second, and also happen when Cards resigns active. Wait 1.5 s before reading fil
 
 The feature map in [`features/`](features/README.md) has the recipe for each user-facing feature.
 Start from its README.
+
+## Clipboard
+
+Copy and paste checks use the owner's clipboard, so save it first and restore it after:
+
+```bash
+cv clip save                       # every type on the clipboard, kept until restore
+cv clip set 'TEXT' ['<ul>…</ul>']  # what a paste will read: plain text, and HTML as public.html
+cv ax key cmd+v
+cv ax key cmd+c && cv clip show    # what a copy wrote: the types, the text and the HTML
+cv clip restore                    # put the owner's clipboard back
+```
+
+`clip set` refuses until `clip save` ran, and `cv stop` restores a saved clipboard if you forget.
+Never print the owner's clipboard; compare `osascript -e 'clipboard info' | shasum` and
+`pbpaste | shasum` before and after to prove the restore.
 
 ## Evidence
 

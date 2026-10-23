@@ -1,4 +1,4 @@
-# Cards — prototype spec (agreed 2026-10-21, revised 2026-10-22)
+# Cards — prototype spec (agreed 2026-10-21, revised 2026-10-23)
 
 Personal-use macOS prototype. Native Swift app built with Xcode.
 
@@ -31,6 +31,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Deleting the selected card shows the one underneath.
 - At launch the stack shows its top card, or the blank page when the stack is empty.
 - The count badge counts real cards only, never the blank page.
+- The count badge is a button: it opens the stack arranger (see Arranging the stack). Its tooltip reads "Arrange the stack" (revised 2026-10-23).
 
 ## Pop / return / find space
 - Pop, the ↗ Pop button on the stacked card (revised 2026-10-22), takes the first grid slot (left→right, top→bottom) not taken by a card or the stack. A snapped card or stack takes its slot; a free one takes the slot it covers most. Other apps' windows are ignored.
@@ -59,6 +60,18 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Because of the blank page, swiping and the bands work with any number of stacked cards, including zero or one.
 - ↗ Pop takes the selected card.
 
+## Arranging the stack (new 2026-10-23)
+- Purpose: put the stacked cards in the order you want, the only way besides cards entering or leaving that the stack's order changes.
+- Opening: click the count badge, wherever it sits (the card's corner, or the ribbon under Hide all). With zero stacked cards the badge does nothing. When a narrow ribbon has dropped the badge, there is no arranger until the card area is back.
+- A popover anchored to the badge, one row per stacked card, top of the stack first. The blank page and popped cards are not listed. Each row shows the card's header ("Untitled" when empty), truncated with "…". It grows to about 10 rows, then scrolls.
+- The card the stack shows is highlighted, and the stack keeps showing that same card after any move.
+- Clicking a row's name shows that card on the stack. The popover stays open until Esc or a click outside it.
+- Moving by mouse: each row has a grip (≡) on its left; only the grip starts a drag, with the open-hand cursor over it. A standard insertion line shows where the card will land, and the list scrolls when dragged near its top or bottom. The order changes and is saved only on drop. Esc mid-drag, or dropping outside the list, cancels.
+- Moving by keyboard: the popover opens with the shown card's row selected. ↑/↓ select another row; ⌥↑/⌥↓ move the selected card one place, and it stays selected; Return or Space shows it on the stack; Esc closes (or cancels a drag first).
+- VoiceOver: the badge reads "N cards in the stack, button" and can be reached with Tab when keyboard navigation is on. Each row reads "<title>, 3 of 7", plus "current card" for the one the stack shows, with the actions Move up and Move down, and press to show the card. The grip is hidden from VoiceOver. After any move VoiceOver announces the new place, such as "Moved to 2 of 7"; moving past an end does nothing and announces "Already at the top" or "Already at the bottom".
+- The list follows the desk while open: popped, returned, new, deleted, renamed or rescanned cards update it in place. A drag whose card leaves the stack mid-drag is cancelled.
+- Each move is saved as the stack order in the sidecar, like any other change.
+
 ## Blank page (new 2026-10-22)
 - Typing its first character turns it into a real card in the same place in the loop (the bottom of the stack). The card stays selected with the cursor in it, and a new blank page appears right after it.
 - Left untouched, it creates nothing.
@@ -67,12 +80,33 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 ## Card content and editing
 - Applies to popped cards and to the selected stacked card alike.
 - First line (first paragraph) is automatically the bold level-1 header, regardless of formatting.
-- Body formatting: bold, italic, bullet list, numbered list, checkboxes. Nothing else.
-- Apply via ⌘B / ⌘I; typing `- `, `1. `, `[] ` starts lists; Enter continues a list, Enter on an empty item ends it.
+- Body formatting: bold, italic, bullet list, numbered list, checkboxes, and list items nested up to three levels (see Nested lists). Nothing else (revised 2026-10-23).
+- Apply via ⌘B / ⌘I; typing `- `, `1. `, `[] ` starts lists; Enter continues a list, Enter on an empty top-level item ends it.
 - A five-button formatting bar appears along the bottom of a card only while editing.
 - Scroll wheel/trackpad scrolls whichever card the pointer is over. The card being edited has a stronger border.
 - Per-card buttons (clarity toggle, summary refresh, ↩ Stack, trash) fade in on hover only. Trash asks "Delete this card?". The stacked card has every one of them, with ↗ Pop where a popped card has ↩ Stack (revised 2026-10-22).
 - New: creates a blank card and pops it straight out, cursor on the header line, always expanded. Desktop full → New shows the stack's blank page instead.
+
+## Nested lists (new 2026-10-23)
+- Bullet, numbered and checkbox items nest under one another, any kind under any kind, at most 3 levels deep. Only list items have levels: plain lines and the header always sit at the left edge.
+- Each level indents 20pt further. Bullets are `•`, `◦`, `▪` by level; numbers and checkboxes look the same at every level.
+- A nested numbered run restarts at 1 under its parent, and the parent's count continues past its children. Every level uses `1.` style.
+- Tab moves the item (or every selected item) one level deeper, Shift-Tab one level up, each carrying all of its children. Tab does nothing if any part would pass level 3, or if the item has no list item above it at the same level or deeper to sit under, so a level is never skipped. Shift-Tab on a top-level item turns it into plain text.
+- On the header, a plain line, or the first item of a list, Tab types a tab character as before.
+- Enter on an empty nested item, or Backspace at the very start of one, moves it up one level. At the top level both behave as before.
+- Changing an item's kind changes only that line; ticking a parent checkbox leaves its children alone.
+- After every edit, no item sits more than one level deeper than the list item above it, and an item right after a plain line is at the top level. Children left without a parent (a deleted line, a parent turned plain, undo) move up just enough to fit.
+- Each Tab, Shift-Tab or paste, with any tidying it causes, is one undo step.
+- In the card file each level is 4 spaces of indent. When reading, a list line indented further than the list item above it is that item's child; a tab counts as 4 spaces; depth is tidied as above. Indented plain lines stay plain with their spaces. Existing files with indented list lines therefore load nested, and are rewritten with 4-space indents on their next save.
+- The summary prompt shows each level as 2 spaces of indent.
+
+## Copy and paste (new 2026-10-23)
+- Copy puts two forms on the clipboard: the card file's Markdown (markers, 4 spaces per level, `**bold**`, `*italic*`) and HTML with real nested `<ul>`/`<ol>` lists, so Notes, Mail and Docs paste a list and Markdown apps paste Markdown.
+- A selection inside one line copies just its text. A selection crossing a line break copies every line it touches with its marker; levels count from the shallowest copied item, and a copied header becomes `# Title`.
+- Paste reads HTML first when it holds a list (a selection in the Claude app, web pages, Notes); otherwise the plain text is read as Markdown, also accepting `•` `◦` `▪` `·` `‣` bullets and `1)` numbering (terminal output such as Claude Code's).
+- From HTML: list items, nesting, ordered vs unordered, checkboxes, bold and italic are kept. Headings, links, code and table cells become plain lines with their text; images are dropped.
+- A paste with no line break is inserted as typed text and never starts a list.
+- A multi-line paste: on an empty line, the first pasted line replaces it (kind and level); inside text, the first pasted line's text joins the current line, which keeps its kind. Later lines keep their own kinds, shifted by the current item's level, and anything past level 3 is tidied up. Pasting into the header puts the first line in the header and the rest in the body.
 
 ## Clarity mode
 - Collapsed card: same size and position, header stays, body replaced by the 2-line AI summary in a lighter style. Applies on the stack too.

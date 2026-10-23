@@ -3,28 +3,85 @@ import Foundation
 
 // A card's content in domain form, its Markdown file format, and the typing rules for lists.
 // Markdown is parsed here, at the file boundary; the editor's NSAttributedString form is
-// converted in CardEditor.swift, at the editor boundary. Nothing else knows either format.
+// converted in CardEditor.swift, at the editor boundary, and the clipboard's forms in
+// Clipboard.swift, which reads and writes Markdown only through this file.
 
 /// A card's content: the header plus body lines.
 struct Note: Equatable {
     /// The first paragraph. Always shown as the bold H1 header and stored as `# header`;
     /// it never carries inline styling or a list kind ("regardless of formatting").
     var header: String
-    var body: [Line]
+    /// Tidy by construction: every way a note comes to exist (a file, the editor, a paste, a test)
+    /// ends in `init`, which applies `tidyLevels`.
+    private(set) var body: [Line]
+
+    init(header: String, body: [Line]) {
+        self.header = header
+        self.body = Note.tidied(body)
+    }
 
     static let blank = Note(header: "", body: [])
+
+    static func tidied(_ lines: [Line]) -> [Line] {
+        zip(lines, tidyLevels(lines.map(\.shape))).map { $0.with(shape: $1) }
+    }
+}
+
+/// How deep a list item sits. Exactly three values exist; `init?` refuses any other (Tab uses
+/// that as "would pass level 3") and `init(clamping:)` repairs one (files, pastes, attributes).
+struct Level: Comparable, Hashable {
+    static let count = 3
+    let rawValue: Int
+
+    private init(valid rawValue: Int) { self.rawValue = rawValue }
+    static let top = Level(valid: 0)
+
+    init?(_ rawValue: Int) {
+        guard (0..<Level.count).contains(rawValue) else { return nil }
+        self.rawValue = rawValue
+    }
+
+    init(clamping n: Int) { rawValue = min(max(n, 0), Level.count - 1) }
+
+    var deeper: Level? { Level(rawValue + 1) }
+    var shallower: Level? { Level(rawValue - 1) }
+
+    static func < (a: Level, b: Level) -> Bool { a.rawValue < b.rawValue }
+}
+
+/// A line's place in the outline, without its text. A plain line is always at the top: its
+/// initializer drops any other level, so kind and level can't disagree.
+struct LineShape: Hashable {
+    let kind: LineKind
+    let level: Level
+
+    init(kind: LineKind, level: Level = .top) {
+        self.kind = kind
+        self.level = kind.isList ? level : .top
+    }
+
+    static let plain = LineShape(kind: .text)
+
+    func with(kind: LineKind) -> LineShape { LineShape(kind: kind, level: level) }
+    func with(level: Level) -> LineShape { LineShape(kind: kind, level: level) }
 }
 
 /// One body paragraph.
 struct Line: Equatable {
-    var kind: LineKind
+    let shape: LineShape
+    var kind: LineKind { shape.kind }
+    var level: Level { shape.level }
     /// Normalized on construction: no empty runs, no two neighbouring runs with the same style,
     /// and spaces at the edges of a styled run are plain (Markdown can't style them).
     /// Normalization is what makes `Note(markdown: note.markdown) == note` hold.
     private(set) var runs: [Run]
 
-    init(kind: LineKind = .text, runs: [Run]) {
-        self.kind = kind
+    init(kind: LineKind = .text, level: Level = .top, runs: [Run]) {
+        self.init(shape: LineShape(kind: kind, level: level), runs: runs)
+    }
+
+    init(shape: LineShape, runs: [Run]) {
+        self.shape = shape
         var pieces: [Run] = []
         for run in runs {
             guard !run.style.isEmpty else {
@@ -48,16 +105,26 @@ struct Line: Equatable {
         self.runs = merged
     }
 
+    func with(shape: LineShape) -> Line { Line(shape: shape, runs: runs) }
+
     var text: String { runs.map(\.text).joined() }
     var isBlank: Bool { text.allSatisfy(\.isWhitespace) }
 }
 
 /// The body formats that exist. The spec's whole list: plain, bullet, numbered, checkbox.
-enum LineKind: Equatable {
+enum LineKind: Hashable {
     case text, bullet, numbered
     case todo(done: Bool)
 
     var isList: Bool { self != .text }
+
+    /// Bullet, numbered and checkbox, ignoring whether a checkbox is ticked.
+    func sameList(as other: LineKind) -> Bool {
+        switch (self, other) {
+        case (.todo, .todo): true
+        default: self == other
+        }
+    }
 }
 
 /// A span of text with one inline style.
@@ -98,14 +165,15 @@ extension Note {
     /// The single non-blank body line, shown instead of a summary when `wantsSummary` is false.
     var shortBody: String { body.first { !$0.isBlank }?.text ?? "" }
 
-    /// Header and body as plain text, for the summary prompt.
+    /// Header and body as plain text, for the summary prompt. Each level is 2 spaces of indent.
     var plainText: String {
         ([header] + body.map { line in
-            switch line.kind {
+            let item = switch line.kind {
             case .text: line.text
             case .bullet, .numbered: "- " + line.text
             case .todo(let done): (done ? "[x] " : "[ ] ") + line.text
             }
+            return String(repeating: "  ", count: line.level.rawValue) + item
         }).joined(separator: "\n")
     }
 
@@ -113,9 +181,7 @@ extension Note {
     ///
     /// - Line 0 is the header; leading `#`s and one space are stripped.
     /// - One blank line right after the header is the separator `markdown` writes; it is skipped.
-    /// - Every other line is one body line:
-    ///   `- [ ] x` / `- [x] x` → todo, `- x` or `* x` → bullet, `12. x` → numbered, else text.
-    /// - Inline: `***x***` bold+italic, `**x**` bold, `*x*` italic, `\x` literal x.
+    /// - Every other line is one body line, read by `bodyLines`.
     init(markdown: String) {
         // `isNewline` also splits "\r\n", which Swift treats as one character.
         var lines = markdown.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
@@ -126,39 +192,74 @@ extension Note {
             headerLine = headerLine.drop { $0 == "#" }
             if headerLine.hasPrefix(" ") { headerLine = headerLine.dropFirst() }
         }
-        header = Note.parseInline(headerLine).map(\.text).joined()
-
         var rest = lines.dropFirst()
         if rest.first == "" { rest = rest.dropFirst() }
-        body = rest.map { line in
-            let (kind, content) = Note.lineKind(of: Substring(line))
-            return Line(kind: kind, runs: Note.parseInline(content))
-        }
+        self.init(header: Note.parseInline(headerLine).map(\.text).joined(), body: Note.bodyLines(Array(rest)))
     }
 
     /// Writes a card file: `# header`, a blank line, then one Markdown line per body line.
-    /// Inverse of `init(markdown:)` for every note the editor can produce.
+    /// Inverse of `init(markdown:)` for every note. A note without nested lines writes the same
+    /// bytes it did before levels existed, so its digest and cached summary survive.
     var markdown: String {
-        let numbers = listNumbers(body.map(\.kind))
         var out = ["# " + Note.escape(header)]
         if !body.isEmpty { out.append("") }
-        for (line, number) in zip(body, numbers) {
+        out += Note.markdownLines(body)
+        return out.joined(separator: "\n") + "\n"
+    }
+
+    /// Markdown body lines to `Line`s, the one reader for files and pasted text.
+    ///
+    /// - `- [ ] x` / `- [x] x` → todo, `- x` or `* x` → bullet, `12. x` → numbered, else text;
+    ///   a marker may follow spaces or tabs (a tab counts as 4 columns).
+    /// - A list line indented further than the open list item above it is that item's child,
+    ///   one at the same indent is its sibling. The first item of a run (after a plain line or at
+    ///   the start) is at the top whatever its indent. Past the third level clamps.
+    /// - A plain line keeps its leading spaces and ends the run.
+    /// - Inline: `***x***` bold+italic, `**x**` bold, `*x*` italic, `\x` literal x.
+    static func bodyLines(_ lines: [String]) -> [Line] {
+        var ancestors: [Int] = []   // indent columns of the open items, increasing
+        return lines.map { raw in
+            let (columns, rest) = indentation(of: Substring(raw))
+            let (kind, content) = lineKind(of: rest)
+            guard kind.isList else {
+                ancestors = []
+                return Line(runs: parseInline(Substring(raw)))
+            }
+            while let last = ancestors.last, last > columns { ancestors.removeLast() }
+            if ancestors.last != columns { ancestors.append(columns) }
+            return Line(kind: kind, level: Level(clamping: ancestors.count - 1), runs: parseInline(content))
+        }
+    }
+
+    /// One Markdown line per body line: 4 spaces per level, then the marker. Numbers come from
+    /// `listNumbers`, so the file and the screen can't disagree.
+    static func markdownLines(_ body: [Line]) -> [String] {
+        zip(body, listNumbers(body.map(\.shape))).map { line, number in
             let content = line.runs.map { Note.renderInline($0) }.joined()
+            let indent = String(repeating: "    ", count: line.level.rawValue)
             switch line.kind {
-            case .text: out.append(Note.escapeLineStart(content))
+            case .text:
+                return Note.escapeLineStart(content)
             case .bullet:
                 let readsAsCheckbox = Note.checkboxes.contains { content.hasPrefix($0.marker) }
-                out.append("- " + (readsAsCheckbox ? "\\" : "") + content)
-            case .numbered: out.append("\(number ?? 1). " + content)
-            case .todo(let done): out.append((done ? "- [x] " : "- [ ] ") + content)
+                return indent + "- " + (readsAsCheckbox ? "\\" : "") + content
+            case .numbered:
+                return indent + "\(number ?? 1). " + content
+            case .todo(let done):
+                return indent + (done ? "- [x] " : "- [ ] ") + content
             }
         }
-        return out.joined(separator: "\n") + "\n"
     }
 
     // MARK: Line prefixes
 
     private static let checkboxes: [(marker: String, done: Bool)] = [("[ ] ", false), ("[x] ", true), ("[X] ", true)]
+
+    /// Leading spaces and tabs as columns (a tab counts 4), and what follows them.
+    private static func indentation(of line: Substring) -> (columns: Int, rest: Substring) {
+        let blanks = line.prefix { $0 == " " || $0 == "\t" }
+        return (blanks.reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }, line.dropFirst(blanks.count))
+    }
 
     private static func lineKind(of line: Substring) -> (LineKind, Substring) {
         let todos = checkboxes.map { ("- " + $0.marker, LineKind.todo(done: $0.done)) }
@@ -172,19 +273,17 @@ extension Note {
         return (.text, line)
     }
 
-    /// A plain line that happens to start like Markdown syntax gets its first character escaped,
-    /// so it reads back as plain text here and in other Markdown readers.
-    private static func escapeLineStart(_ content: String) -> String {
-        let (kind, _) = lineKind(of: Substring(content))
-        if kind != .text || content.hasPrefix("#") || content.hasPrefix(">") {
-            return "\\" + content
-        }
-        return content
+    /// A plain line whose text, after its own leading spaces, would read as a list marker, `#`
+    /// or `>` gets a `\` there, so it reads back as plain text here and in other Markdown readers.
+    static func escapeLineStart(_ content: String) -> String {
+        let rest = indentation(of: Substring(content)).rest
+        guard lineKind(of: rest).0 != .text || rest.hasPrefix("#") || rest.hasPrefix(">") else { return content }
+        return String(content.dropLast(rest.count)) + "\\" + rest
     }
 
     // MARK: Inline
 
-    private static func escape(_ text: String) -> String {
+    static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "*", with: "\\*")
     }
 
@@ -262,23 +361,63 @@ extension Note {
     }
 }
 
-/// Display numbers for runs of `.numbered` lines: 1, 2, 3… restarting after any other kind.
-/// The Markdown writer and the editor's marker drawing both use this, so the file and the
-/// screen can't disagree.
-func listNumbers(_ kinds: [LineKind]) -> [Int?] {
-    var n = 0
-    return kinds.map { kind in
-        guard kind == .numbered else {
-            n = 0
-            return nil
+// MARK: - Levels
+
+/// The whole nesting rule: takes the shapes lines ask for, returns the shapes they may have. No item
+/// sits more than one level deeper than the item above it, an item first in the body or right after
+/// a plain line is at the top, and nothing passes the deepest level. A child whose parent went away
+/// moves up just enough. Idempotent, never deeper than asked, kinds untouched.
+func tidyLevels(_ shapes: [LineShape]) -> [LineShape] {
+    var cap = Level.top
+    return shapes.map { shape in
+        guard shape.kind.isList else {
+            cap = .top
+            return .plain
         }
-        n += 1
-        return n
+        let level = min(shape.level, cap)
+        cap = level.deeper ?? level
+        return shape.with(level: level)
     }
 }
 
-/// The list rules the editor applies while typing, as pure decisions.
+/// Display numbers, one running count per level. A numbered item counts up at its level; any other
+/// item ends its level's run; a parent restarts the counts below it, so a nested run starts at 1
+/// and the parent's run resumes after its children; a plain line ends every run. The Markdown
+/// writer and the editor's marker drawing both use this, so the file and the screen can't disagree.
+func listNumbers(_ shapes: [LineShape]) -> [Int?] {
+    var counts = [Int](repeating: 0, count: Level.count)
+    return shapes.map { shape in
+        guard shape.kind.isList else {
+            counts = [Int](repeating: 0, count: Level.count)
+            return nil
+        }
+        let level = shape.level.rawValue
+        for deeper in (level + 1)..<Level.count { counts[deeper] = 0 }
+        guard shape.kind == .numbered else {
+            counts[level] = 0
+            return nil
+        }
+        counts[level] += 1
+        return counts[level]
+    }
+}
+
+// MARK: - Typing
+
+/// The list rules the editor applies while typing, as pure decisions over the body's shapes.
+/// Each key asks one function and gets one `Outcome`; the editor only carries it out.
 enum Typing {
+    enum Outcome: Equatable {
+        /// Do what the text view does for this key (type a tab, join lines on Backspace).
+        case system
+        /// Swallow the key: a refused Tab, or Shift-Tab where nothing can move.
+        case nothing
+        /// The body's shapes become exactly these (same count, already tidy). One undo step.
+        case reshape([LineShape])
+        /// Insert the line break, and give the line it creates this shape.
+        case splitLine(LineShape)
+    }
+
     /// Typing a space after one of these at the very start of a body line starts a list:
     /// `-` bullet, `1.` (any number) numbered, `[]` or `[ ]` checkbox.
     static func listKind(forPrefix prefix: String) -> LineKind? {
@@ -294,19 +433,71 @@ enum Typing {
         }
     }
 
-    enum Return: Equatable {
-        /// Insert a line break; the new line gets this kind.
-        case newLine(LineKind)
-        /// Insert nothing; the current (empty) item turns into plain text.
-        case endList
+    /// Enter. `line` is the body line the caret is in, nil in the header. Continues a list at the
+    /// same level (a new checkbox starts unticked); on an empty item it moves the item up a level,
+    /// and a top-level one becomes plain text, as before.
+    static func onReturn(_ body: [LineShape], at line: Int?, isEmpty: Bool) -> Outcome {
+        guard let i = line, body[i].kind.isList else { return .splitLine(.plain) }
+        if isEmpty { return onBacktab(body, touching: i..<(i + 1)) }
+        if case .todo = body[i].kind { return .splitLine(body[i].with(kind: .todo(done: false))) }
+        return .splitLine(body[i])
     }
 
-    /// Enter continues a list (a new checkbox starts unchecked) and ends it on an empty item.
-    /// Enter in the header or a plain line starts a plain line.
-    static func onReturn(kind: LineKind, isEmpty: Bool, isHeader: Bool) -> Return {
-        if isHeader || !kind.isList { return .newLine(.text) }
-        if isEmpty { return .endList }
-        if case .todo = kind { return .newLine(.todo(done: false)) }
-        return .newLine(kind)
+    /// Backspace with the caret at the very start of a body line and no selection: an item moves
+    /// up a level (a top-level one becomes plain); anything else joins lines as before.
+    static func onBackspaceAtStart(_ body: [LineShape], at line: Int) -> Outcome {
+        body[line].kind.isList ? onBacktab(body, touching: line..<(line + 1)) : .system
+    }
+
+    /// Tab. `lines` are the body lines the selection touches (empty in the header). Moves every
+    /// touched item and the deeper lines after it one level down, or refuses the whole move when a
+    /// line would pass the deepest level or the result would need tidying (no item above to sit
+    /// under). With no item touched, or a caret on a list's first item, it types a tab character.
+    static func onTab(_ body: [LineShape], touching lines: Range<Int>) -> Outcome {
+        let items = lines.filter { body[$0].kind.isList }
+        guard let first = items.first else { return .system }
+        if lines.count == 1, first == 0 || !body[first - 1].kind.isList { return .system }
+        var proposed = body
+        for i in block(rootedAt: items, in: body) {
+            guard let deeper = body[i].level.deeper else { return .nothing }
+            proposed[i] = body[i].with(level: deeper)
+        }
+        return tidyLevels(proposed) == proposed ? .reshape(proposed) : .nothing
+    }
+
+    /// Shift-Tab, and the move behind Enter on an empty item and Backspace at an item's start. The
+    /// same block moves one level up; a top-level item becomes plain and its children rise with it.
+    static func onBacktab(_ body: [LineShape], touching lines: Range<Int>) -> Outcome {
+        let items = lines.filter { body[$0].kind.isList }
+        guard !items.isEmpty else { return .nothing }
+        var proposed = body
+        for i in block(rootedAt: items, in: body) {
+            proposed[i] = body[i].level.shallower.map { body[i].with(level: $0) } ?? .plain
+        }
+        return .reshape(tidyLevels(proposed))
+    }
+
+    /// The bar's list buttons: every touched line becomes `kind`, or plain if all already are.
+    /// Only those lines change; a list item keeps its level and plain text becomes a top-level item.
+    static func onToggleKind(_ kind: LineKind, body: [LineShape], touching lines: Range<Int>) -> Outcome {
+        guard !lines.isEmpty else { return .nothing }
+        let allAlready = lines.allSatisfy { body[$0].kind.sameList(as: kind) }
+        var proposed = body
+        for i in lines { proposed[i] = body[i].with(kind: allAlready ? .text : kind) }
+        return .reshape(tidyLevels(proposed))
+    }
+
+    /// The touched items plus every deeper line after each.
+    private static func block(rootedAt roots: [Int], in body: [LineShape]) -> Set<Int> {
+        var moved: Set<Int> = []
+        for root in roots {
+            moved.insert(root)
+            var j = root + 1
+            while j < body.count, body[j].kind.isList, body[j].level > body[root].level {
+                moved.insert(j)
+                j += 1
+            }
+        }
+        return moved
     }
 }

@@ -7,7 +7,8 @@
 //   cards-ax click PID WINDOW FX FY      activate Cards, then a real mouse click at a fraction of the window
 //   cards-ax focus PID WINDOW            click the window's text area (puts the caret in that card)
 //   cards-ax type PID TEXT               key events to the pid; "\n" is Return
-//   cards-ax key PID COMBO               one key, e.g. cmd+b, return, escape, delete
+//   cards-ax key PID COMBO               one key, e.g. cmd+b, return, escape, delete, shift+tab
+//                                        (a cmd combo first activates Cards: menu shortcuts need it)
 //   cards-ax scroll PID WINDOW DX DY     one scroll-wheel event over the window (DX<0 = next card)
 //   cards-ax drag PID WINDOW FX FY DX DY press at a fraction of the window and drag by DX,DY points
 //   cards-ax windows PID                 CGWindowID and frame of each on-screen window, for screencapture -l
@@ -213,6 +214,7 @@ case "key":
         }
     }
     guard let code = keyCodes[name] else { fail("unknown key \(name); known: \(keyCodes.keys.sorted().joined(separator: " "))") }
+    if flags.contains(.maskCommand) { activate(pid) }
     post(pid, key: code, flags: flags)
     usleep(200_000)
 
