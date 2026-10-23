@@ -72,6 +72,11 @@ whenever a step fails or anything looks off. It must print `healthy` before any 
 | `cv ax scroll WINDOW DX DY` | One scroll-wheel event over the window |
 | `cv ax drag WINDOW FX FY DX DY` | Press at a fraction of the window, drag by DX,DY points, release |
 | `cv ax windows` | Window ids and frames, for `screencapture -l` |
+| `cv ax act LABEL ACTION [WINDOW]` | Run an accessibility action (`AXPress`, or a custom one such as `Move up`) on the first element whose title, description or help starts with LABEL |
+| `cv ax where LABEL` | Screen `x y` of the center of the first element whose name starts with LABEL |
+| `cv ax mouse down\|drag\|up\|move X Y` | One raw mouse event at a screen point, for a drag you want to stop partway |
+| `cv ax dragat X Y DX DY` | Press at a screen point, drag by DX,DY, release |
+| `cv ax listen SECONDS` | Print each VoiceOver announcement the app posts, for that long. Open the popover first |
 
 WINDOW is `stack`, `card=<first line of the card>`, or an index from `tree` (`w0`). Indices follow
 the z-order and change after any click, so use the names.
@@ -90,7 +95,16 @@ Stable handles in this app, all from the code:
 - `press` matches a button's whole title, description or tooltip, so `press "↗ Pop"` and `press
   Clarity` work, and `press Pop` does not.
 - Delete confirmation: a sheet "Delete this card?" with buttons `Delete` and `Cancel`.
-- Count badge: static text named `Cards in the stack`, value = number of stacked cards.
+- Count badge: a button. `tree` prints it as `AXButton "2" | "2 cards in the stack" | "Arrange the stack"`
+  (title = number of stacked cards, then its VoiceOver label, then its tooltip), `[disabled]` at
+  zero. `press "Arrange the stack"` opens the arranger; at zero it fails with `is disabled`.
+- Arranger: an `AXPopover` under the stack window holding `AXTable "Stack order"`. Each row is an
+  `AXRow` (`[selected]` is the keyboard's row) holding one `AXCell` named `<title>, 3 of 7`, plus
+  `, current card` for the shown one, with `actions=[Move up, Move down, …]` (AppKit lists them
+  twice; they are one pair). `act "Beta card" "Move up"` is VoiceOver's Move up on that row, and
+  `act "Beta card" AXPress` is its press. ⌥↑ and ⌥↓ are `cv ax key opt+up` and `opt+down`; the keys go
+  to the popover, which is the key window while it is open. The grip is the right 30 points of a row:
+  its center is `where "<title>"` plus 118 on x.
 - "Desktop full": static text `Desktop full` in the ribbon, only while it applies.
 - Edge bands: the outer 5% of the stack window. `cv ax click stack 0.985 0.6` = next,
   `cv ax click stack 0.015 0.6` = previous.

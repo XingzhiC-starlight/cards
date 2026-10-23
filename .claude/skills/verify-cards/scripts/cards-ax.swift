@@ -12,6 +12,13 @@
 //   cards-ax scroll PID WINDOW DX DY     one scroll-wheel event over the window (DX<0 = next card)
 //   cards-ax drag PID WINDOW FX FY DX DY press at a fraction of the window and drag by DX,DY points
 //   cards-ax windows PID                 CGWindowID and frame of each on-screen window, for screencapture -l
+//   cards-ax act PID LABEL ACTION [WINDOW]  run an accessibility action (AXPress, or a custom one such
+//                                        as "Move up") on the first element whose title, description or
+//                                        help starts with LABEL; `tree` lists custom actions as actions=[…]
+//   cards-ax where PID LABEL             screen x y of the center of the first element whose name starts with LABEL
+//   cards-ax mouse PID down|drag|up|move X Y  one raw mouse event at screen point X,Y (no activation)
+//   cards-ax dragat PID X Y DX DY        press at screen point X,Y, drag by DX,DY points, release
+//   cards-ax listen PID SECONDS          print each VoiceOver announcement the app posts for SECONDS
 //
 // WINDOW is `stack`, `card=<title>` (the card's first line), or an index `tree` prints (w0, w1;
 // indices follow the z-order and change after any click, so prefer the names). Frames are screen
@@ -39,6 +46,17 @@ func frame(_ el: AXUIElement) -> CGRect? {
 }
 
 func children(_ el: AXUIElement) -> [AXUIElement] { attr(el, kAXChildrenAttribute) ?? [] }
+
+func actionNames(_ el: AXUIElement) -> [String] {
+    var list: CFArray?
+    guard AXUIElementCopyActionNames(el, &list) == .success else { return [] }
+    return list as? [String] ?? []
+}
+
+/// A custom action is reported as "Name:Move up\nTarget:0x0\nSelector:(null)"; built-in ones keep their AX name.
+func shortAction(_ raw: String) -> String {
+    raw.hasPrefix("Name:") ? String(raw.dropFirst(5).prefix { $0 != "\n" }) : raw
+}
 
 func names(_ el: AXUIElement) -> [String] {
     [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute].compactMap { attr(el, $0) as String? }.filter { !$0.isEmpty }
@@ -147,6 +165,9 @@ case "tree":
             }
             if let enabled: Bool = attr(el, kAXEnabledAttribute), !enabled { line += " [disabled]" }
             if let focused: Bool = attr(el, kAXFocusedAttribute), focused { line += " [focused]" }
+            if let selected: Bool = attr(el, kAXSelectedAttribute), selected { line += " [selected]" }
+            let custom = actionNames(el).filter { $0.hasPrefix("Name:") }.map(shortAction)
+            if !custom.isEmpty { line += " actions=[" + custom.joined(separator: ", ") + "]" }
             print(line + " " + describe(frame(el)))
         })
     }
@@ -251,6 +272,73 @@ case "windows":
               let b = w[kCGWindowBounds as String] as? [String: Double], (w[kCGWindowLayer as String] as? Int) == 0 else { continue }
         print("\(id) @\(Int(b["X"]!)),\(Int(b["Y"]!)) \(Int(b["Width"]!))x\(Int(b["Height"]!))")
     }
+
+case "act":
+    guard args.count >= 4 else { fail("act PID LABEL ACTION [WINDOW]") }
+    let scope = args.count >= 5 ? [window(app, args[4])] : windows(app)
+    var target: (element: AXUIElement, action: String)?
+    for w in scope where target == nil {
+        walk(w) { el, _ in
+            guard target == nil, names(el).contains(where: { $0.hasPrefix(args[2]) }),
+                  let raw = actionNames(el).first(where: { shortAction($0) == args[3] }) else { return }
+            target = (el, raw)
+        }
+    }
+    guard let target else { fail("no element named \(json(args[2])) with the action \(json(args[3])) (run `tree`)") }
+    let result = AXUIElementPerformAction(target.element, target.action as CFString)
+    guard result == .success else { fail("action failed: \(result.rawValue)") }
+    usleep(300_000)
+
+case "where":
+    guard args.count == 3 else { fail("where PID LABEL") }
+    var found: CGRect?
+    for w in windows(app) where found == nil {
+        walk(w) { el, _ in
+            if found == nil, names(el).contains(where: { $0.hasPrefix(args[2]) }) { found = frame(el) }
+        }
+    }
+    guard let found else { fail("no element named \(json(args[2])) (run `tree`)") }
+    print("\(Int(found.midX)) \(Int(found.midY))")
+
+case "mouse":
+    guard args.count == 5, let x = Double(args[3]), let y = Double(args[4]) else { fail("mouse PID down|drag|up|move X Y") }
+    let types: [String: CGEventType] = ["down": .leftMouseDown, "drag": .leftMouseDragged, "up": .leftMouseUp, "move": .mouseMoved]
+    guard let type = types[args[2]] else { fail("unknown mouse event \(args[2])") }
+    mouse(type, CGPoint(x: x, y: y))
+
+case "dragat":
+    guard args.count == 6, let x = Double(args[2]), let y = Double(args[3]), let dx = Double(args[4]), let dy = Double(args[5]) else {
+        fail("dragat PID X Y DX DY")
+    }
+    let start = CGPoint(x: x, y: y)
+    mouse(.mouseMoved, start)
+    mouse(.leftMouseDown, start)
+    let steps = 30
+    for s in 1...steps {
+        let t = Double(s) / Double(steps)
+        mouse(.leftMouseDragged, CGPoint(x: start.x + dx * t, y: start.y + dy * t))
+        usleep(15_000)
+    }
+    usleep(150_000)
+    mouse(.leftMouseUp, CGPoint(x: start.x + dx, y: start.y + dy))
+    usleep(600_000)
+
+case "listen":
+    guard args.count == 3, let seconds = Double(args[2]) else { fail("listen PID SECONDS") }
+    var observer: AXObserver?
+    let callback: AXObserverCallbackWithInfo = { _, _, notification, info, _ in
+        let text = (info as NSDictionary)["AXAnnouncementKey"] as? String ?? "\(info)"
+        print("\(notification as String): \(json(text))")
+        fflush(stdout)
+    }
+    guard AXObserverCreateWithInfoCallback(pid, callback, &observer) == .success, let observer else { fail("cannot observe pid \(pid)") }
+    // An announcement is posted on one element (the arranger's table), and an observer on the app does
+    // not see it, so watch every element that exists now: open the popover before listening.
+    for w in windows(app) {
+        walk(w) { el, _ in _ = AXObserverAddNotification(observer, el, "AXAnnouncementRequested" as CFString, nil) }
+    }
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
+    CFRunLoopRunInMode(.defaultMode, seconds, false)
 
 default:
     fail("unknown command \(args[0])")

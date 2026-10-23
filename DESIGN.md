@@ -46,7 +46,8 @@ func send(_ command: Command) {
 | `Library.swift` | `~/Documents/Cards/*.md` and the hidden sidecar `.cards.json` |
 | `Summarizer.swift` | summary requests and the one Anthropic call |
 | `CardWindow.swift`, `CardEditor.swift` | the card window, press routing, and the text view |
-| `StackWindow.swift`, `Swipe.swift` | the stack window; the rules that turn scroll events into flips (pure) |
+| `StackWindow.swift`, `Swipe.swift` | the stack window and its count badge; the rules that turn scroll events into flips (pure) |
+| `StackArranger.swift` | the popover off the badge that reorders the stack, and the `Arrangement` value it reads (see The stack arranger) |
 | `Settings.swift`, `App.swift` | API key and settings; entry point, menu bar, hotkey, reopen |
 | `Palette.swift` | every color the app draws, and the glass material, as named tokens (see Color and glass) |
 
@@ -68,10 +69,24 @@ func send(_ command: Command) {
 - **The stack is a loop with one blank page.** `Desk.stack` is the stacked cards, top first,
   and `Desk.selection` is the loop position: an index into the stack, or `stack.count` for the
   blank page after the bottom card. Next and previous move the position and never reorder the
-  cards, so they undo each other and work with any number of cards. Every insert and remove goes
-  through two helpers that keep the position on the same item, which is how "Pop", delete and an
-  outside file removal all end up showing the next card. Typing on the blank page appends a card
-  at its position, so the new card stays selected and the blank page moves after it.
+  cards, so they undo each other and work with any number of cards. The order changes when a
+  card enters or leaves and when the arranger moves one, and nowhere else. Every insert and
+  remove goes through two helpers that keep the position on the same page, which is how "Pop",
+  delete and an outside file removal all end up showing the next card; `arrange` is the third
+  way a card changes place, and it keeps the position on the same card. Typing on the blank page
+  appends a card at its position, so the new card stays selected and the blank page moves after
+  it.
+- **The stack arranger is a view of the stack, not a copy.** The order lives only in
+  `Desk.stack`. `StackFace` carries the rows (a `CardID` and `Note.title`, top first), and the
+  badge's count is derived from them. The arranger takes one derived value, `Arrangement` (the
+  rows and the current card's id), and answers with two total commands keyed by `CardID`:
+  `arrange(id, at:)` puts a card at an index and `showStacked(id)` turns the loop to it. Both
+  ignore an id that is no longer stacked, so a stale row, a double drop or a card that left
+  mid-drag changes nothing. While open, the list is patched by id on every render and never
+  reloaded, so a drag in flight and the VoiceOver cursor survive; an equal `Arrangement` (most
+  renders, such as a keystroke in the body) returns at once. The popover hangs from the stack
+  view, not the badge, and `StackView.layout` hands it the badge's frame each time, so it
+  follows the badge between the card's corner and the ribbon and closes when the badge goes.
 - **One card view, two homes.** The stack shows its selected card with the same `CardView` a
   popped card uses. On the stack it does not drag and leaves its border to the stack. It shows
   the blank page when it has no card. The hover row's move button comes from one table,
@@ -232,6 +247,10 @@ Later changes, after trying the app:
   hover row, where a desktop card has "↩ Stack", so every card's buttons sit in one row. The
   ribbon is New and Clarity. Clarity lost its "On" and "Off" and shows its state by text color
   (`inkSoft` off, `accent` on), with the state in its tooltip and accessibility value.
+- 2026-10-23, stack arranger: the count badge became a button that opens a popover listing the
+  stacked cards, top first, to reorder by grip drag, ⌥↑ and ⌥↓ or VoiceOver actions, and to turn
+  the stack to one. This is the one place besides entering and leaving that changes the stack's
+  order.
 - 2026-10-23, nested lists: list items gained a level (up to three), moved with Tab and
   Shift-Tab and saved as 4 spaces per level. Copy now writes Markdown and HTML lists, and paste
   reads them back, including lists copied from the Claude app or a terminal. Markers stay drawn,
@@ -286,10 +305,18 @@ Later changes, after trying the app:
 - The grid uses the menu-bar screen and does not subtract the Dock. Only the overhang limit
   does, so a header can't hide under it.
 - The count badge sits at the bottom-right of the stack's card area: the hover buttons are at
-  the top-right and the formatting bar's buttons at the left, so it covers neither. It takes no
-  clicks, so a press on it still places the caret in the text under it. Under Hide all, in a
-  ribbon too narrow for it beside the toolbar and the buttons, it is hidden, and "Desktop full"
-  truncates first, so no button ever moves.
+  the top-right and the formatting bar's buttons at the left, so it covers neither. It is the
+  arranger's button, so a press on it opens the arranger instead of placing the caret in the
+  text under it; with no stacked cards it is disabled and takes no click, so a press falls
+  through as before. Under Hide all, in a ribbon too narrow for it beside the toolbar and the
+  buttons, it is hidden, and "Desktop full" truncates first, so no button ever moves.
+- Showing a card from the arranger while Hide all is on brings back the stack's card area and
+  nothing else, the same precedent as New on a full desktop, because "show that card" means
+  nothing without a card area. Moving cards reveals nothing. The rule is `Visibility.reveal(after:)`,
+  next to the New and Pop rules it joined.
+- A drag whose card leaves the stack is refused at the drop rather than cancelled: AppKit has no
+  API to cancel a session from outside, so the row slides back on release, and the desk would
+  ignore the gone id anyway.
 - Free cards piled into one slot leave other slots untaken, so Pop also stops at 19 cards on the
   desktop, keeping the old ceiling.
 - The guide window sits above the dragged card and ignores the mouse; a swap target shows the

@@ -30,8 +30,8 @@ Preconditions:
 
 - **Hide.** Click the eye button. Run `cv ax press "Hide all" stack`. `cv ax windows` lists one
   window, the stack, now only ribbon-high (`342x46` on the owner's display). `cv ax tree` shows
-  `Show all` where `Hide all` was, no `AXTextArea`, no `↗ Pop`, and `Cards in the stack` inside
-  the ribbon.
+  `Show all` where `Hide all` was, no `AXTextArea`, no `↗ Pop`, and the count badge (`AXButton "2"`,
+  tooltip `Arrange the stack`) inside the ribbon.
   `cv shot hide-ribbon` shows the tan strip only.
 - **New while hidden.** Click New. Run `cv ax press New`, then `cv ax type 'Shown alone'`.
   `cv ax windows` lists the ribbon and one new card. The popped Alpha card stays hidden.

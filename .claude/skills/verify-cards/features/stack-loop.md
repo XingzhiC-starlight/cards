@@ -30,7 +30,8 @@ stacked cards.
 Preconditions:
 
 - `cv launch --seed`; `cv doctor` prints `healthy`.
-- `cv ax text stack` prints `"Alpha card\nalpha body"` and the `Cards in the stack` value is 2.
+- `cv ax text stack` prints `"Alpha card\nalpha body"` and the badge, `AXButton "2"` in `cv ax tree`,
+  reads 2.
 
 - **Next by band.** Click the right band. Run `cv ax click stack 0.985 0.6`. `cv ax text stack`
   prints `"Beta card\nbeta line one\nbeta line two"`.
