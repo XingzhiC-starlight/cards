@@ -151,7 +151,7 @@ enum Clipboard {
         var rows = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
         if rows.count > 1, rows.last == "" { rows.removeLast() }
         guard rows.count > 1 else { return [Line(runs: [Run(text: rows[0])])] }
-        return Note.bodyLines(rows.map(fileGrammar))
+        return Note.bodyLines(rows.map { fileGrammar($0) })
     }
 
     /// One pasted line in the card file's grammar, so Note's one reader can read it: other

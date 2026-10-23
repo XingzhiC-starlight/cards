@@ -4,38 +4,44 @@ import AppKit
 //
 // Representation. The text storage holds exactly the note's text: the header paragraph, then one
 // paragraph per body line, separated by "\n". List markers are not characters. A body
-// paragraph's kind is the `.cardLine` attribute over its whole range, and `CardTextView` draws
-// "•", "1." or a checkbox in the paragraph's indent. So the user can never half-delete a marker,
-// numbering can't go stale, and `Note(attributedText:)` is a plain walk over paragraphs.
-// Inline bold/italic are font traits. The header's look is re-imposed after every change.
+// paragraph's shape (kind and level) is the `.cardLine` attribute over its whole range, and
+// `CardTextView` draws "•", "1." or a checkbox in the paragraph's indent. So the user can never
+// half-delete a marker, numbering can't go stale, and `Note(attributedText:)` is a plain walk over
+// paragraphs. Inline bold/italic are font traits. Fonts and indents are re-derived after every
+// change; `.cardLine` changes only through `applyShapes`, which registers undo.
 //
 // An empty last paragraph has no characters to hold an attribute, so while the caret is in it,
-// its kind lives in the typing attributes.
+// its shape lives in the typing attributes.
 
 extension NSAttributedString.Key {
-    /// Paragraph-level `LineKind.attributeValue` of a body paragraph. Absent means plain text.
+    /// Paragraph-level `LineShape.attributeValue` of a body paragraph. Absent means plain text.
     static let cardLine = NSAttributedString.Key("cards.line")
 }
 
-extension LineKind {
-    /// Plist-friendly value for `.cardLine`, so undo carries it.
+extension LineShape {
+    /// Plist-friendly value for `.cardLine`, so undo carries it: "text", "bullet", "numbered",
+    /// "todo" or "done", with ":1" or ":2" below the top level.
     var attributeValue: String {
-        switch self {
+        let name = switch kind {
         case .text: "text"
         case .bullet: "bullet"
         case .numbered: "numbered"
         case .todo(let done): done ? "done" : "todo"
         }
+        return level == .top ? name : "\(name):\(level.rawValue)"
     }
 
+    /// Anything unknown reads as plain text, and a level out of range is clamped.
     init(attributeValue: Any?) {
-        self = switch attributeValue as? String {
+        let parts = ((attributeValue as? String) ?? "").split(separator: ":", maxSplits: 1).map(String.init)
+        let kind: LineKind = switch parts.first {
         case "bullet": .bullet
         case "numbered": .numbered
         case "todo": .todo(done: false)
         case "done": .todo(done: true)
         default: .text
         }
+        self.init(kind: kind, level: Level(clamping: parts.count == 2 ? Int(parts[1]) ?? 0 : 0))
     }
 }
 
@@ -43,8 +49,10 @@ extension LineKind {
 enum EditorStyle {
     static let header = NSFont.boldSystemFont(ofSize: 17)
     static let body = NSFont.systemFont(ofSize: 13)
-    /// Left indent of list paragraphs; the marker is drawn inside it.
+    /// How much further each level indents; a list item's marker is drawn in its last 20 points.
     static let listIndent: CGFloat = 20
+    /// Bullets by level.
+    static let bullets = ["•", "◦", "▪"]
     /// Keeps the header's text clear of the hover buttons in the card's top-right corner.
     static let headerTrailingSpace: CGFloat = 76
 
@@ -74,39 +82,47 @@ enum EditorStyle {
         return [.font: header, .foregroundColor: Palette.ink, .paragraphStyle: paragraph]
     }()
 
-    static func bodyAttributes(kind: LineKind, style: Style) -> [NSAttributedString.Key: Any] {
+    /// The look of a body paragraph: font, color and indent, without its `.cardLine`.
+    static func bodyLook(shape: LineShape, style: Style) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         paragraph.paragraphSpacing = 3
-        if kind.isList {
-            paragraph.firstLineHeadIndent = listIndent
-            paragraph.headIndent = listIndent
+        if shape.kind.isList {
+            paragraph.firstLineHeadIndent = listIndent * CGFloat(shape.level.rawValue + 1)
+            paragraph.headIndent = paragraph.firstLineHeadIndent
         }
-        return [.font: font(for: style), .foregroundColor: Palette.ink, .paragraphStyle: paragraph,
-                .cardLine: kind.attributeValue]
+        return [.font: font(for: style), .foregroundColor: Palette.ink, .paragraphStyle: paragraph]
+    }
+
+    static func bodyAttributes(shape: LineShape, style: Style) -> [NSAttributedString.Key: Any] {
+        bodyLook(shape: shape, style: style).merging([.cardLine: shape.attributeValue]) { $1 }
     }
 }
 
 extension Note {
-    /// The editor's text: header paragraph, then one paragraph per body line. Each paragraph's
-    /// terminating "\n" carries that paragraph's attributes.
-    var attributedText: NSAttributedString {
-        let text = NSMutableAttributedString(string: header, attributes: EditorStyle.headerAttributes)
-        var previous = EditorStyle.headerAttributes
-        for line in body {
-            text.append(NSAttributedString(string: "\n", attributes: previous))
-            for run in line.runs {
-                text.append(NSAttributedString(string: run.text,
-                                               attributes: EditorStyle.bodyAttributes(kind: line.kind, style: run.style)))
+    /// The editor's text: header paragraph, then one paragraph per body line.
+    var attributedText: NSAttributedString { attributedParagraphs(0..<(body.count + 1)) }
+
+    /// Paragraphs `range` of the editor's text (0 is the header). Each but the note's last ends in
+    /// a "\n" that carries its paragraph's attributes.
+    func attributedParagraphs(_ range: Range<Int>) -> NSAttributedString {
+        let text = NSMutableAttributedString()
+        for i in range {
+            let runs = i == 0 ? [Run(text: header)] : body[i - 1].runs
+            let attributes = { (style: Style) in
+                i == 0 ? EditorStyle.headerAttributes : EditorStyle.bodyAttributes(shape: body[i - 1].shape, style: style)
             }
-            previous = EditorStyle.bodyAttributes(kind: line.kind, style: [])
+            for run in runs where !run.text.isEmpty {
+                text.append(NSAttributedString(string: run.text, attributes: attributes(run.style)))
+            }
+            if i < body.count { text.append(NSAttributedString(string: "\n", attributes: attributes([]))) }
         }
         return text
     }
 
     /// Inverse of `attributedText`. Paragraph 0 → `header` (plain string, attributes ignored).
-    /// Paragraph i > 0 → a line whose kind is the `.cardLine` at its start and whose runs follow
-    /// the fonts. `trailingKind` is the kind of an empty last paragraph, which has no characters.
-    init(attributedText text: NSAttributedString, trailingKind: LineKind = .text) {
+    /// Paragraph i > 0 → a line whose shape is the `.cardLine` at its start and whose runs follow
+    /// the fonts. `trailingShape` is the shape of an empty last paragraph, which has no characters.
+    init(attributedText text: NSAttributedString, trailingShape: LineShape = .plain) {
         let string = text.string as NSString
         var ranges: [NSRange] = []
         var start = 0
@@ -121,18 +137,33 @@ extension Note {
         }
         let header = string.substring(with: ranges[0])
         let body = ranges.dropFirst().map { range -> Line in
-            let kind = range.location < string.length
-                ? LineKind(attributeValue: text.attribute(.cardLine, at: range.location, effectiveRange: nil))
-                : trailingKind
+            let shape = range.location < string.length
+                ? LineShape(attributeValue: text.attribute(.cardLine, at: range.location, effectiveRange: nil))
+                : trailingShape
             var runs: [Run] = []
             if range.length > 0 {
                 text.enumerateAttribute(.font, in: range) { value, sub, _ in
                     runs.append(Run(text: string.substring(with: sub), style: EditorStyle.style(of: value as? NSFont)))
                 }
             }
-            return Line(kind: kind, runs: runs)
+            return Line(shape: shape, runs: runs)
         }
         self.init(header: header, body: body)
+    }
+
+    /// The paragraphs (0 is the header) that differ between two notes, as ranges into each; either
+    /// may be empty. The common prefix and suffix are left out, except that the prefix never takes
+    /// either note's last paragraph: that one has no "\n", so a line added after it changes it.
+    static func changedParagraphs(from old: Note, to new: Note) -> (old: Range<Int>, new: Range<Int>) {
+        func same(_ i: Int, _ j: Int) -> Bool {
+            i == 0 || j == 0 ? i == j && old.header == new.header : old.body[i - 1] == new.body[j - 1]
+        }
+        let (m, n) = (old.body.count, new.body.count)
+        var prefix = 0
+        while prefix < min(m, n), same(prefix, prefix) { prefix += 1 }
+        var suffix = 0
+        while m - suffix >= prefix, n - suffix >= prefix, same(m - suffix, n - suffix) { suffix += 1 }
+        return (prefix..<(m + 1 - suffix), prefix..<(n + 1 - suffix))
     }
 }
 
@@ -147,6 +178,10 @@ final class CardTextView: NSTextView {
     /// The note currently shown, derived from the storage after every change. `show` compares
     /// against it so a re-render caused by our own `onChange` never resets the caret.
     private(set) var note = Note.blank
+
+    /// True while the after-edit tidy writes, so its own change doesn't tidy again.
+    private var isTidying = false
+    private var tidyCheckPending = false
 
     init() {
         // TextKit 1, built by hand: the marker drawing and the header hit area need
@@ -239,13 +274,10 @@ final class CardTextView: NSTextView {
         didChangeText()
     }
 
-    /// The bar's list buttons: every body paragraph touched by the selection becomes `kind`,
-    /// or plain text if they all already are `kind`. Undoable.
+    /// The bar's list buttons: every body line the selection touches becomes `kind`, or plain
+    /// text if they all already are `kind`. Only those lines change. Undoable.
     func toggleLineKind(_ kind: LineKind) {
-        let paragraphs = bodyParagraphs(in: selectedRange())
-        guard !paragraphs.isEmpty else { return }
-        let allAlready = paragraphs.allSatisfy { self.kind(ofParagraph: $0).sameList(as: kind) }
-        setKind(allAlready ? .text : kind, paragraphs: paragraphs)
+        perform(Typing.onToggleKind(kind, body: bodyShapes(), touching: touchedLines()), named: "List") {}
     }
 
     /// Targets of the hidden Format menu's ⌘B / ⌘I items (see `AppDelegate.installMainMenu`).
@@ -254,25 +286,24 @@ final class CardTextView: NSTextView {
 
     // MARK: Typing rules
 
-    /// Enter continues a list (a new checkbox starts unchecked) and ends it on an empty item.
+    /// Tab nests the touched items, carrying their children; where nothing can nest it types a tab.
+    override func insertTab(_ sender: Any?) {
+        guard !hasMarkedText() else { return super.insertTab(sender) }
+        perform(Typing.onTab(bodyShapes(), touching: touchedLines()), named: "Indent") { super.insertTab(sender) }
+    }
+
+    /// Shift-Tab moves the touched items up a level. It never moves focus out of the card.
+    override func insertBacktab(_ sender: Any?) {
+        guard !hasMarkedText() else { return super.insertBacktab(sender) }
+        perform(Typing.onBacktab(bodyShapes(), touching: touchedLines()), named: "Outdent") {}
+    }
+
+    /// Enter continues a list at its level (a new checkbox starts unticked); on an empty item it
+    /// moves the item up, and a top-level one ends the list.
     override func insertNewline(_ sender: Any?) {
-        guard !hasMarkedText(), selectedRange().length == 0 else {
-            super.insertNewline(sender)
-            return
-        }
-        let paragraph = currentParagraph()
-        let content = contentLength(of: paragraph)
-        let body = allParagraphs().dropFirst()
-        let line = paragraph.location == 0 ? nil : body.firstIndex(of: paragraph).map { $0 - 1 }
-        switch Typing.onReturn(body.map { LineShape(kind: kind(ofParagraph: $0)) }, at: line, isEmpty: content == 0) {
-        case .reshape(let shapes):
-            setKind(shapes[line ?? 0].kind, paragraphs: [paragraph])
-        case .splitLine(let shape):
-            super.insertNewline(sender)
-            setKind(shape.kind, paragraphs: [currentParagraph()])
-        case .system, .nothing:
-            super.insertNewline(sender)
-        }
+        guard !hasMarkedText(), selectedRange().length == 0 else { return super.insertNewline(sender) }
+        let outcome = Typing.onReturn(bodyShapes(), at: caretLine(), isEmpty: contentLength(of: currentParagraph()) == 0)
+        perform(outcome, named: "Typing") { super.insertNewline(sender) }
     }
 
     /// Auto-start: typing a space right after "-", "1." or "[]" at the very start of a plain body
@@ -284,38 +315,119 @@ final class CardTextView: NSTextView {
         super.insertText(Self.plainNewlines(text), replacementRange: replacementRange)
     }
 
-    /// Backspace at the start of a list item removes the marker instead of joining lines.
+    /// Backspace at the very start of a list item moves it up a level instead of joining lines.
     override func deleteBackward(_ sender: Any?) {
         let selection = selectedRange()
-        if selection.length == 0, !hasMarkedText() {
-            let paragraph = currentParagraph()
-            if paragraph.location > 0, selection.location == paragraph.location, kind(ofParagraph: paragraph).isList {
-                setKind(.text, paragraphs: [paragraph])
-                return
-            }
+        if selection.length == 0, !hasMarkedText(), let line = caretLine(), selection.location == currentParagraph().location {
+            return perform(Typing.onBackspaceAtStart(bodyShapes(), at: line), named: "Outdent") { super.deleteBackward(sender) }
         }
         super.deleteBackward(sender)
     }
 
-    /// Pasting and dropping take plain text only; formatting comes from the card's own rules.
-    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] { [.string] }
+    /// An edit that adds or removes a line break starts its own undo step, so the tidy it causes
+    /// lands in the same step instead of after typing that coalesced before it.
+    override func shouldChangeText(in range: NSRange, replacementString: String?) -> Bool {
+        if let replacementString, replacementString.contains("\n") || (string as NSString).substring(with: range).contains("\n") {
+            breakUndoCoalescing()
+        }
+        return super.shouldChangeText(in: range, replacementString: replacementString)
+    }
+
+    // MARK: Copy and paste
+
+    /// Copy, Cut and dragging text out: the card file's Markdown, plus an HTML list when the
+    /// selection crosses a line break.
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] { [.html, .string] }
+
+    override func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        guard let copy = Clipboard.copy(note, span: span(of: selectedRange())) else { return false }
+        let html = types.contains(.html) ? copy.html : nil
+        pboard.declareTypes(html == nil ? [.string] : [.html, .string], owner: nil)
+        if let html { pboard.setString(html, forType: .html) }
+        return pboard.setString(copy.markdown, forType: .string)
+    }
+
+    override func writeSelection(to pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        guard let copy = Clipboard.copy(note, span: span(of: selectedRange())) else { return false }
+        switch type {
+        case .html: return copy.html.map { pboard.setString($0, forType: .html) } ?? false
+        case .string: return pboard.setString(copy.markdown, forType: .string)
+        default: return false
+        }
+    }
+
+    /// Paste and drop: an HTML list first, else the text as Markdown (see `Clipboard.lines`), as
+    /// one undo step. Never goes through `insertText`, so a pasted space can't start a list.
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] { [.html, .string] }
 
     override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
-        guard let text = pboard.string(forType: .string) else { return false }
-        insertText(Self.plainNewlines(text), replacementRange: selectedRange())
+        guard !hasMarkedText(), let lines = Clipboard.lines(from: pboard.clipboardOffer) else { return false }
+        let pasted = Clipboard.paste(lines, into: note, replacing: span(of: selectedRange()),
+                                     typing: EditorStyle.style(of: typingAttributes[.font] as? NSFont))
+        undoStep("Paste") { replaceDocument(with: pasted) }
         return true
+    }
+
+    /// Replaces only the paragraphs that differ from `pasted.note`, as one registered change, and
+    /// puts the caret after the pasted text.
+    private func replaceDocument(with pasted: Clipboard.Pasted) {
+        guard let storage = textStorage else { return }
+        let region = Note.changedParagraphs(from: note, to: pasted.note)
+        let starts = allParagraphs().map(\.location) + [storage.length]
+        let range = NSRange(location: starts[region.old.lowerBound], length: starts[region.old.upperBound] - starts[region.old.lowerBound])
+        let replacement = pasted.note.attributedParagraphs(region.new)
+        guard shouldChangeText(in: range, replacementString: replacement.string) else { return }
+        storage.replaceCharacters(in: range, with: replacement)
+        let paragraphs = allParagraphs()
+        setSelectedRange(NSRange(location: paragraphs[pasted.caret.paragraph].location + pasted.caret.offset, length: 0))
+        didChangeText()
+        if let last = pasted.note.body.last, paragraphs.last?.length == 0, pasted.caret.paragraph == paragraphs.count - 1 {
+            setTrailingShape(last.shape)
+        }
+    }
+
+    /// A text range as clipboard positions: paragraph (0 is the header) and UTF-16 offset.
+    private func span(of range: NSRange) -> Clipboard.Span {
+        let starts = allParagraphs().map(\.location)
+        func position(_ location: Int) -> Clipboard.Position {
+            let paragraph = starts.lastIndex { $0 <= location } ?? 0
+            return Clipboard.Position(paragraph: paragraph, offset: location - starts[paragraph])
+        }
+        return Clipboard.Span(start: position(range.location), end: position(NSMaxRange(range)))
     }
 
     // MARK: Change tracking
 
-    /// After any change (typing, paste, undo): re-impose the header look on paragraph 0 and the
-    /// body look on everything else, then publish the new note.
+    /// After any change (typing, paste, undo): tidy the shapes, re-derive the look, publish.
     override func didChangeText() {
         super.didChangeText()
         guard !hasMarkedText() else { return }
+        if !isTidying { tidyAfterChange() }
         restyle()
         fixTypingAttributes()
         publish()
+    }
+
+    /// Makes the shapes tidy and each paragraph's `.cardLine` uniform, registered in the undo
+    /// group of the edit that broke them. Undo and redo bring back states that were already tidy,
+    /// so they get only an unregistered check once they finish: registering mid-undo would put
+    /// the tidy on the redo stack.
+    private func tidyAfterChange() {
+        if let undoManager, undoManager.isUndoing || undoManager.isRedoing {
+            guard !tidyCheckPending else { return }
+            tidyCheckPending = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                tidyCheckPending = false
+                undoManager.disableUndoRegistration()
+                tidyAfterChange()
+                undoManager.enableUndoRegistration()
+            }
+            return
+        }
+        isTidying = true
+        applyShapes(tidyLevels(bodyShapes()))
+        isTidying = false
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
@@ -342,8 +454,10 @@ final class CardTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if let paragraph = checkbox(at: point), case .todo(let done) = kind(ofParagraph: paragraph) {
-            setKind(.todo(done: !done), paragraphs: [paragraph])
+        if let marker = checkbox(at: point), case .todo(let done) = marker.shape.kind {
+            var shapes = bodyShapes()
+            shapes[marker.line] = marker.shape.with(kind: .todo(done: !done))
+            undoStep("Checkbox") { applyShapes(shapes) }
             return
         }
         if event.clickCount == 1, !event.modifierFlags.contains(.shift), point.y <= headerBottom,
@@ -365,7 +479,7 @@ final class CardTextView: NSTextView {
                                          y: textContainerOrigin.y))
         }
         for marker in markers() {
-            switch marker.kind {
+            switch marker.shape.kind {
             case .todo(let done):
                 let name = done ? "checkmark.square" : "square"
                 guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
@@ -383,8 +497,9 @@ final class CardTextView: NSTextView {
     }
 
     private struct Marker {
-        let paragraph: NSRange
-        let kind: LineKind
+        /// Index into the body.
+        let line: Int
+        let shape: LineShape
         let label: String
         /// Where the marker sits, in view coordinates: the box a checkbox fills, whose right edge
         /// a bullet or number aligns to.
@@ -395,44 +510,45 @@ final class CardTextView: NSTextView {
     /// Every list paragraph's marker, with the same geometry for drawing and checkbox clicks.
     private func markers() -> [Marker] {
         guard let layoutManager, let textContainer else { return [] }
-        let paragraphs = allParagraphs().dropFirst()
-        let kinds = paragraphs.map(kind(ofParagraph:))
-        let numbers = listNumbers(kinds.map { LineShape(kind: $0) })
+        let paragraphs = Array(allParagraphs().dropFirst())
+        let shapes = paragraphs.map(shape(ofParagraph:))
+        let numbers = listNumbers(shapes)
         let left = textContainerOrigin.x + textContainer.lineFragmentPadding
         var result: [Marker] = []
-        for ((paragraph, kind), number) in zip(zip(paragraphs, kinds), numbers) where kind.isList {
-            let line: NSRect
+        for (line, paragraph) in paragraphs.enumerated() where shapes[line].kind.isList {
+            let shape = shapes[line]
+            let fragment: NSRect
             let baselineOffset: CGFloat
             if paragraph.location < (string as NSString).length {
                 let glyph = layoutManager.glyphIndexForCharacter(at: paragraph.location)
-                line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+                fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
                 baselineOffset = layoutManager.location(forGlyphAt: glyph).y
             } else {
-                line = layoutManager.extraLineFragmentRect
+                fragment = layoutManager.extraLineFragmentRect
                 baselineOffset = layoutManager.defaultBaselineOffset(for: EditorStyle.body)
             }
-            guard line.height > 0 else { continue }
-            let baseline = textContainerOrigin.y + line.minY + baselineOffset
-            let box = NSRect(x: left + 2, y: baseline - 11, width: 13, height: 13)
-            let label = switch kind {
-            case .bullet: "•"
-            case .numbered: "\(number ?? 1)."
+            guard fragment.height > 0 else { continue }
+            let baseline = textContainerOrigin.y + fragment.minY + baselineOffset
+            let box = NSRect(x: left + 2 + EditorStyle.listIndent * CGFloat(shape.level.rawValue), y: baseline - 11, width: 13, height: 13)
+            let label = switch shape.kind {
+            case .bullet: EditorStyle.bullets[shape.level.rawValue]
+            case .numbered: "\(numbers[line] ?? 1)."
             default: ""
             }
-            result.append(Marker(paragraph: paragraph, kind: kind, label: label,
-                                 box: kind == .bullet ? box.offsetBy(dx: -3, dy: 0) : box, baseline: baseline))
+            result.append(Marker(line: line, shape: shape, label: label,
+                                 box: shape.kind == .bullet ? box.offsetBy(dx: -3, dy: 0) : box, baseline: baseline))
         }
         return result
     }
 
-    private func checkbox(at point: NSPoint) -> NSRange? {
+    private func checkbox(at point: NSPoint) -> Marker? {
         markers().first { marker in
-            if case .todo = marker.kind { return marker.box.insetBy(dx: -4, dy: -3).contains(point) }
+            if case .todo = marker.shape.kind { return marker.box.insetBy(dx: -4, dy: -3).contains(point) }
             return false
-        }?.paragraph
+        }
     }
 
-    // MARK: Paragraph helpers
+    // MARK: Paragraphs and shapes
 
     /// Every paragraph's full range (including its "\n"), header first. An empty last paragraph
     /// is included as a zero-length range at the end.
@@ -451,19 +567,29 @@ final class CardTextView: NSTextView {
         return result
     }
 
-    /// The body paragraphs a selection touches (for a caret, the one it is in).
-    private func bodyParagraphs(in range: NSRange) -> [NSRange] {
-        let covered = (string as NSString).paragraphRange(for: range)
-        return allParagraphs().dropFirst().filter { paragraph in
-            paragraph.length == 0 ? paragraph.location == covered.location
-                                  : NSIntersectionRange(paragraph, covered).length > 0
-        }
-    }
-
     private func currentParagraph() -> NSRange {
         let string = self.string as NSString
         let caret = min(selectedRange().location, string.length)
         return string.paragraphRange(for: NSRange(location: caret, length: 0))
+    }
+
+    /// The body line the caret is in, nil in the header.
+    private func caretLine() -> Int? {
+        let paragraph = currentParagraph()
+        guard paragraph.location > 0 else { return nil }
+        return allParagraphs().firstIndex { $0.location == paragraph.location }.map { $0 - 1 }
+    }
+
+    /// The body lines the selection touches (for a caret, the one it is in); empty in the header.
+    private func touchedLines() -> Range<Int> {
+        let paragraphs = allParagraphs()
+        let covered = (string as NSString).paragraphRange(for: selectedRange())
+        let touched = paragraphs.indices.dropFirst().filter { i in
+            paragraphs[i].length == 0 ? paragraphs[i].location == covered.location
+                                      : NSIntersectionRange(paragraphs[i], covered).length > 0
+        }
+        guard let first = touched.first, let last = touched.last else { return 0..<0 }
+        return (first - 1)..<last
     }
 
     private func contentLength(of paragraph: NSRange) -> Int {
@@ -472,84 +598,143 @@ final class CardTextView: NSTextView {
         return string.character(at: NSMaxRange(paragraph) - 1) == 10 ? paragraph.length - 1 : paragraph.length
     }
 
-    /// The header (location 0) is never a list.
-    private func kind(ofParagraph paragraph: NSRange) -> LineKind {
-        guard paragraph.location > 0 else { return .text }
+    /// The header (location 0) is plain. The empty last paragraph's shape is in the typing
+    /// attributes while the caret is in it.
+    private func shape(ofParagraph paragraph: NSRange) -> LineShape {
+        guard paragraph.location > 0 else { return .plain }
         if paragraph.length > 0, let storage = textStorage {
-            return LineKind(attributeValue: storage.attribute(.cardLine, at: paragraph.location, effectiveRange: nil))
+            return LineShape(attributeValue: storage.attribute(.cardLine, at: paragraph.location, effectiveRange: nil))
         }
-        return selectedRange().location == paragraph.location ? LineKind(attributeValue: typingAttributes[.cardLine]) : .text
+        return selectedRange().location == paragraph.location ? LineShape(attributeValue: typingAttributes[.cardLine]) : .plain
     }
 
-    /// Sets `kind` on body paragraphs as one undoable change. An empty last paragraph has no
-    /// characters, so its kind goes into the typing attributes.
-    private func setKind(_ kind: LineKind, paragraphs: [NSRange]) {
+    /// Every body paragraph's shape, the empty last one included.
+    private func bodyShapes() -> [LineShape] { allParagraphs().dropFirst().map(shape(ofParagraph:)) }
+
+    /// The one writer of `.cardLine`: body paragraph i gets `shapes[i]` on every character and the
+    /// header none, as one registered change, so undo restores shapes together with the edit that
+    /// set them. The empty last paragraph's shape goes to `setTrailingShape`.
+    private func applyShapes(_ shapes: [LineShape]) {
         guard let storage = textStorage else { return }
-        let filled = paragraphs.filter { $0.length > 0 && $0.location > 0 && self.kind(ofParagraph: $0) != kind }
-        if let first = filled.first, let last = filled.last {
-            let union = NSUnionRange(first, last)
-            if shouldChangeText(in: union, replacementString: nil) {
-                storage.beginEditing()
-                for paragraph in filled { storage.addAttribute(.cardLine, value: kind.attributeValue, range: paragraph) }
-                storage.endEditing()
-                didChangeText()
+        let paragraphs = allParagraphs()
+        var writes: [(range: NSRange, shape: LineShape?)] = []
+        for (i, paragraph) in paragraphs.enumerated() where paragraph.length > 0 {
+            let wanted = i == 0 ? LineShape.plain : shapes[i - 1]
+            var uniform = true
+            storage.enumerateAttribute(.cardLine, in: paragraph) { value, _, stop in
+                if LineShape(attributeValue: value) != wanted {
+                    uniform = false
+                    stop.pointee = true
+                }
             }
+            if !uniform { writes.append((paragraph, i == 0 ? nil : wanted)) }
         }
-        if paragraphs.contains(where: { $0.length == 0 && $0.location > 0 }) {
-            typingAttributes[.cardLine] = kind.attributeValue
-            fixTypingAttributes()
-            publish()
-            needsDisplay = true
+        if let first = writes.first, let last = writes.last,
+           shouldChangeText(in: NSUnionRange(first.range, last.range), replacementString: nil) {
+            storage.beginEditing()
+            for write in writes {
+                if let shape = write.shape {
+                    storage.addAttribute(.cardLine, value: shape.attributeValue, range: write.range)
+                } else {
+                    storage.removeAttribute(.cardLine, range: write.range)
+                }
+            }
+            storage.endEditing()
+            didChangeText()
+        }
+        if let trailing = paragraphs.last, trailing.length == 0, trailing.location > 0,
+           selectedRange().location == trailing.location, let wanted = shapes.last {
+            setTrailingShape(wanted)
+        }
+    }
+
+    /// The empty last paragraph's shape, kept in the typing attributes. No storage change exists
+    /// for the text view to register, so this registers its own undo, which applies only while the
+    /// caret is back in that paragraph.
+    private func setTrailingShape(_ shape: LineShape) {
+        let old = LineShape(attributeValue: typingAttributes[.cardLine])
+        guard shape != old else { return }
+        let location = (string as NSString).length
+        undoManager?.registerUndo(withTarget: self) { view in
+            if view.selectedRange() == NSRange(location: location, length: 0) { view.setTrailingShape(old) }
+        }
+        typingAttributes[.cardLine] = shape.attributeValue
+        fixTypingAttributes()
+        publish()
+    }
+
+    /// One user-visible step for undo, however many changes `work` registers, kept apart from
+    /// typing before and after it.
+    private func undoStep(_ name: String, _ work: () -> Void) {
+        breakUndoCoalescing()
+        undoManager?.beginUndoGrouping()
+        work()
+        undoManager?.setActionName(name)
+        undoManager?.endUndoGrouping()
+        breakUndoCoalescing()
+    }
+
+    /// Carries out a `Typing` decision; `system` is what the text view does for the key.
+    private func perform(_ outcome: Typing.Outcome, named name: String, system: () -> Void) {
+        switch outcome {
+        case .system:
+            system()
+        case .nothing:
+            break
+        case .reshape(let shapes):
+            undoStep(name) { applyShapes(shapes) }
+        case .splitLine(let shape):
+            undoStep(name) {
+                system()
+                guard let line = caretLine() else { return }
+                var shapes = bodyShapes()
+                shapes[line] = shape
+                applyShapes(shapes)
+            }
         }
     }
 
     /// The space-after-prefix rule. Returns true when it started a list.
     private func startList() -> Bool {
-        guard let storage = textStorage else { return false }
-        let string = self.string as NSString
-        let caret = selectedRange().location
+        guard let storage = textStorage, let line = caretLine() else { return false }
         let paragraph = currentParagraph()
-        guard paragraph.location > 0, kind(ofParagraph: paragraph) == .text else { return false }
-        let prefixRange = NSRange(location: paragraph.location, length: caret - paragraph.location)
-        guard let kind = Typing.listKind(forPrefix: string.substring(with: prefixRange)),
-              shouldChangeText(in: prefixRange, replacementString: "") else { return false }
-        storage.replaceCharacters(in: prefixRange, with: "")
-        let remaining = (self.string as NSString).paragraphRange(for: NSRange(location: paragraph.location, length: 0))
-        if remaining.length > 0 {
-            storage.addAttribute(.cardLine, value: kind.attributeValue, range: remaining)
+        guard shape(ofParagraph: paragraph) == .plain else { return false }
+        let prefixRange = NSRange(location: paragraph.location, length: selectedRange().location - paragraph.location)
+        guard let kind = Typing.listKind(forPrefix: (string as NSString).substring(with: prefixRange)) else { return false }
+        undoStep("List") {
+            guard shouldChangeText(in: prefixRange, replacementString: "") else { return }
+            storage.replaceCharacters(in: prefixRange, with: "")
+            setSelectedRange(NSRange(location: paragraph.location, length: 0))
+            didChangeText()
+            var shapes = bodyShapes()
+            shapes[line] = LineShape(kind: kind)
+            applyShapes(shapes)
         }
-        setSelectedRange(NSRange(location: paragraph.location, length: 0))
-        typingAttributes[.cardLine] = kind.attributeValue
-        didChangeText()
         return true
     }
 
-    /// Paragraph 0: header font, no `.cardLine`, no inline traits ("regardless of formatting").
-    /// Paragraph > 0: body font with the run's own bold/italic, one kind for the whole paragraph
-    /// (the kind at its start), paragraph style from that kind. Attributes only, so it neither
-    /// changes the note's text nor triggers another `didChangeText`.
+    /// Paragraph 0 gets the header look and each body paragraph the look of its shape (the one at
+    /// its start) with its own bold/italic. Attributes only, and never `.cardLine`, so it neither
+    /// changes the note nor needs undo.
     private func restyle() {
         guard let storage = textStorage else { return }
-        storage.beginEditing()
+        var looks: [(NSRange, [NSAttributedString.Key: Any])] = []
         for (index, paragraph) in allParagraphs().enumerated() where paragraph.length > 0 {
-            if index == 0 {
-                storage.setAttributes(EditorStyle.headerAttributes, range: paragraph)
-                continue
-            }
-            let kind = LineKind(attributeValue: storage.attribute(.cardLine, at: paragraph.location, effectiveRange: nil))
-            var styles: [(NSRange, Style)] = []
-            storage.enumerateAttribute(.font, in: paragraph) { value, sub, _ in
-                styles.append((sub, EditorStyle.style(of: value as? NSFont)))
-            }
-            for (range, style) in styles {
-                storage.setAttributes(EditorStyle.bodyAttributes(kind: kind, style: style), range: range)
+            let shape = LineShape(attributeValue: storage.attribute(.cardLine, at: paragraph.location, effectiveRange: nil))
+            storage.enumerateAttributes(in: paragraph) { attributes, range, _ in
+                var look = index == 0 ? EditorStyle.headerAttributes
+                    : EditorStyle.bodyLook(shape: shape, style: EditorStyle.style(of: attributes[.font] as? NSFont))
+                look[.cardLine] = attributes[.cardLine]
+                looks.append((range, look))
             }
         }
+        storage.beginEditing()
+        for (range, look) in looks { storage.setAttributes(look, range: range) }
         storage.endEditing()
     }
 
     /// Typing attributes follow the caret: header look in paragraph 0, otherwise the body look
-    /// for the paragraph's kind, keeping the bold/italic the user has toggled.
+    /// for the paragraph's shape, keeping the bold/italic the user has toggled.
     private func fixTypingAttributes() {
         let paragraph = currentParagraph()
         if paragraph.location == 0 {
@@ -557,26 +742,37 @@ final class CardTextView: NSTextView {
             return
         }
         let style = EditorStyle.style(of: typingAttributes[.font] as? NSFont)
-        typingAttributes = EditorStyle.bodyAttributes(kind: kind(ofParagraph: paragraph), style: style)
+        typingAttributes = EditorStyle.bodyAttributes(shape: shape(ofParagraph: paragraph), style: style)
     }
 
     private func publish() {
         let string = self.string as NSString
         let caretInTrailing = string.length > 0 && string.hasSuffix("\n") && selectedRange().location == string.length
-        let trailing = caretInTrailing ? LineKind(attributeValue: typingAttributes[.cardLine]) : .text
-        let current = Note(attributedText: textStorage ?? NSTextStorage(), trailingKind: trailing)
+        let trailing = caretInTrailing ? LineShape(attributeValue: typingAttributes[.cardLine]) : .plain
+        let current = Note(attributedText: textStorage ?? NSTextStorage(), trailingShape: trailing)
         needsDisplay = true
         guard current != note else { return }
         note = current
         onChange(current)
     }
 
-    /// Only "\n" separates paragraphs here; other line breaks from pasted text become "\n".
+    /// Only "\n" separates paragraphs here; other line breaks in typed text become "\n".
     private static func plainNewlines(_ text: String) -> String {
         text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
             .replacingOccurrences(of: "\u{2028}", with: "\n")
             .replacingOccurrences(of: "\u{2029}", with: "\n")
+    }
+}
+
+private extension NSPasteboard {
+    /// The HTML and text on offer, as strings. HTML arrives as bytes, nearly always UTF-8.
+    var clipboardOffer: Clipboard.Offer {
+        let html = data(forType: .html).map { data in
+            data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF])
+                ? String(data: data, encoding: .utf16) ?? "" : String(decoding: data, as: UTF8.self)
+        }
+        return Clipboard.Offer(html: html, text: string(forType: .string))
     }
 }
 
