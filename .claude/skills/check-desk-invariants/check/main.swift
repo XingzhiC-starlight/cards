@@ -62,6 +62,19 @@ func commands(_ desk: Desk) -> [Command] {
                            .toggleClarity, .forgetFailedSummaries, .delete(ghost), .returnToStack(ghost)]
     for id in popped { list.append(.returnToStack(id)) }
 
+    // The arranger. Move the shown card (the bottom one while the blank page shows) to the top, the
+    // middle, the bottom and past both ends; the top card to the bottom, which leaves another card
+    // shown; show the top and the bottom card. A card that does not exist, and one on the desktop,
+    // must change nothing.
+    let stacked = desk.stack.count
+    if let mover = desk.selectedCard?.id ?? desk.stack.last?.id {
+        for index in Set([0, stacked / 2, stacked - 1, -1, stacked + 5]).sorted() { list.append(.arrange(mover, at: index)) }
+    }
+    if let top = desk.stack.first?.id { list.append(.arrange(top, at: stacked - 1)) }
+    for id in [desk.stack.first?.id, desk.stack.last?.id].compactMap({ $0 }) { list.append(.showStacked(id)) }
+    list += [.arrange(ghost, at: 0), .showStacked(ghost)]
+    if let out = allPopped.first { list += [.arrange(out, at: 0), .showStacked(out)] }
+
     // Drops, for the stack and the first desktop card: onto the other one's slot when it is
     // snapped (a swap), the first free slot, a fixed slot, a free point, a free point past the
     // right edge, and the mover's own place.
@@ -138,8 +151,8 @@ func checkStep(_ before: Desk, _ command: Command, _ after: Desk, arrived: CardI
         expected = beforeIDs.union(added)
     case .delete(let id): expected = beforeIDs.subtracting([id])
     case .syncFiles(let files): expected = Set(files.keys)
-    case .pop, .returnToStack, .flipStack, .move, .edit, .setCollapsed, .toggleClarity, .refreshSummary,
-         .forgetFailedSummaries, .storeSummary:
+    case .pop, .returnToStack, .flipStack, .arrange, .showStacked, .move, .edit, .setCollapsed,
+         .toggleClarity, .refreshSummary, .forgetFailedSummaries, .storeSummary:
         expected = beforeIDs
     }
     if afterIDs != expected {
@@ -158,9 +171,11 @@ func checkStep(_ before: Desk, _ command: Command, _ after: Desk, arrived: CardI
     }
 
     // P3 The stack keeps showing the same page unless the command is meant to change it: a flip
-    // moves one page around the loop; Return shows the returned card; typing on the blank page
-    // shows the new card; New on a full desktop shows the blank page; and when the shown card
-    // leaves (Pop, delete, a file removed), the next surviving card under it shows.
+    // moves one page around the loop; Return shows the returned card; the arranger's row shows
+    // its card, while its move keeps the same card (or the blank page) showing wherever it lands,
+    // which is the default below; typing on the blank page shows the new card; New on a full
+    // desktop shows the blank page; and when the shown card leaves (Pop, delete, a file removed),
+    // the next surviving card under it shows.
     let pages = before.stack.count + 1
     let underneath = before.stack.dropFirst(before.selection + 1).map(\.id).first { id in after.stack.contains { $0.id == id } }
     let want: CardID?
@@ -172,6 +187,7 @@ func checkStep(_ before: Desk, _ command: Command, _ after: Desk, arrived: CardI
         }
         want = shown(after)
     case .returnToStack(let id) where before.popped.contains(where: { $0.card.id == id }): want = id
+    case .showStacked(let id) where before.stack.contains(where: { $0.id == id }): want = id
     case .writeBlank where !added.isEmpty: want = added.first
     case .new where arrived == nil: want = nil
     default:
@@ -185,11 +201,30 @@ func checkStep(_ before: Desk, _ command: Command, _ after: Desk, arrived: CardI
         try fail("P3 stack page", "no blank page right after the card typed on the blank page")
     }
 
-    // P4 The stack's order changes only by cards entering or leaving: the cards that stay keep
-    // their order, Return puts its card on top, and new cards join at the bottom.
+    // P4 The stack's order changes only by cards entering or leaving, and by the arranger's move:
+    // the cards that stay keep their order, Return puts its card on top, new cards join at the
+    // bottom, and a move lands its card at the clamped index with the others in their old order.
     let kept = before.stack.map(\.id).filter { id in after.stack.contains { $0.id == id } }
     let afterKept = after.stack.map(\.id).filter { id in before.stack.contains { $0.id == id } }
-    if kept != afterKept { try fail("P4 stack order", "stacked cards reordered: \(kept.map(\.rawValue)) became \(afterKept.map(\.rawValue))") }
+    if case .arrange(let id, let index) = command {
+        let was = before.stack.map(\.id), now = after.stack.map(\.id)
+        if was.contains(id) {
+            let landing = min(max(index, 0), was.count - 1)
+            if now.firstIndex(of: id) != landing {
+                try fail("P4 stack order", "\"\(id.rawValue)\" moved to \(index) of \(was.count) but is at \(now.firstIndex(of: id).map(String.init) ?? "nowhere")")
+            }
+            if now.filter({ $0 != id }) != was.filter({ $0 != id }) {
+                try fail("P4 stack order", "a move reordered the other cards: \(was.map(\.rawValue)) became \(now.map(\.rawValue))")
+            }
+        } else if now != was {
+            try fail("P4 stack order", "moving a card that is not stacked changed the stack")
+        }
+        if after.popped != before.popped || after.stackPlace != before.stackPlace {
+            try fail("P4 stack order", "the arranger's move changed the desktop")
+        }
+    } else if kept != afterKept {
+        try fail("P4 stack order", "stacked cards reordered: \(kept.map(\.rawValue)) became \(afterKept.map(\.rawValue))")
+    }
     let entered = after.stack.map(\.id).filter { id in !before.stack.contains { $0.id == id } }
     switch command {
     case .returnToStack(let id) where !entered.isEmpty:

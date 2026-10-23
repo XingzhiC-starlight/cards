@@ -19,7 +19,7 @@ final class StackLayoutTests: XCTestCase {
         }
         var toggle: NSView { view.subviews.first { $0.toolTip == "Hide all" || $0.toolTip == "Show all" }! }
         var menu: NSView { control("Settings and quit") }
-        var badge: NSView { control("Cards in the stack") }
+        var badge: NSView { control("Arrange the stack") }
         var toolbar: NSView { view.subviews.first { $0 is NSStackView }! }
         var desktopFull: NSView { view.subviews.first { ($0 as? NSTextField)?.stringValue == "Desktop full" }! }
         var ribbonButtons: [NSButton] { (toolbar as! NSStackView).arrangedSubviews.compactMap { $0 as? NSButton } }
@@ -32,14 +32,15 @@ final class StackLayoutTests: XCTestCase {
     }
 
     private func stack(width: CGFloat, _ visibility: Visibility = .all, full: Bool = false,
-                       clarity: Bool = false) -> Stack {
+                       clarity: Bool = false, count: Int = 12) -> Stack {
         var toggles = 0
         var commands: [Command] = []
         let window = StackWindow(send: { commands.append($0) }, menu: { NSMenu() }, toggleHidden: { toggles += 1 },
                                  drag: WindowDrag(moved: { _ in }, dropped: { _ in }))
         let card = CardFace(id: CardID(rawValue: "a"), note: Note(header: "Title", body: []), collapsed: false,
                             summary: .body(""))
-        let face = StackFace(count: 12, selected: card, clarity: clarity, desktopFull: full)
+        let rows = (0..<count).map { StackRow(id: CardID(rawValue: "row\($0)"), title: "Card \($0)") }
+        let face = StackFace(stacked: rows, selected: card, clarity: clarity, desktopFull: full)
         window.apply(face, cell: CGRect(x: 0, y: 0, width: width, height: (width * 0.78).rounded()), visibility: visibility)
         window.contentView!.layoutSubtreeIfNeeded()
         return Stack(window: window, toggled: { toggles }, sent: { commands })
@@ -111,14 +112,40 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(hidden.badge.frame.maxX, hidden.toggle.frame.minX, "left of the toggle")
     }
 
-    func testTheBadgeLeavesAPressOnItToWhatIsUnderIt() {
+    private func center(of badge: NSView, in stack: Stack) -> CGPoint {
+        stack.view.convert(CGPoint(x: badge.frame.midX, y: badge.frame.midY), to: stack.view.superview)
+    }
+
+    func testTheBadgeIsAButtonThatTakesTheClickInBothPlacements() {
         for visibility in [Visibility.all, .hideAll] {
             let stack = stack(width: wide, visibility)
-            let center = stack.view.convert(CGPoint(x: stack.badge.frame.midX, y: stack.badge.frame.midY), to: stack.view.superview)
-            let hit = stack.view.hitTest(center)
-            XCTAssertFalse(hit is NSTextField, "the count never takes the click")
+            let hit = stack.view.hitTest(center(of: stack.badge, in: stack))
+            XCTAssertTrue(hit === stack.badge, "the badge takes the press, \(visibility)")
+            XCTAssertTrue(stack.badge is NSButton, "as a button")
+            XCTAssertFalse(hit === stack.view, "so in the ribbon the press does not drag the stack")
+        }
+    }
+
+    func testTheBadgeReadsItsCountToVoiceOverAndOffersTheArranger() throws {
+        let badge = try XCTUnwrap(stack(width: wide).badge as? NSButton)
+        XCTAssertEqual(badge.title, "12", "it shows the number")
+        XCTAssertEqual(badge.accessibilityLabel(), "12 cards in the stack", "and says what it counts")
+        XCTAssertEqual(badge.toolTip, "Arrange the stack", "the tooltip names what it does")
+        XCTAssertFalse(badge.refusesFirstResponder, "Tab can reach it when keyboard navigation is on")
+        XCTAssertEqual(try XCTUnwrap(stack(width: wide, count: 1).badge as? NSButton).accessibilityLabel(),
+                       "1 card in the stack", "one card is singular")
+    }
+
+    func testAtZeroCardsTheBadgeDoesNothingAndLeavesAPressToWhatIsUnderIt() throws {
+        for visibility in [Visibility.all, .hideAll] {
+            let stack = stack(width: wide, visibility, count: 0)
+            let badge = try XCTUnwrap(stack.badge as? NSButton)
+            XCTAssertEqual(badge.title, "0", "it still counts")
+            XCTAssertFalse(badge.isEnabled, "but is not a live button")
+            let hit = stack.view.hitTest(center(of: badge, in: stack))
+            XCTAssertFalse(hit === badge, "a press does not land on it, \(visibility)")
             if visibility == .hideAll {
-                XCTAssertTrue(hit === stack.view, "in the ribbon the press drags the stack")
+                XCTAssertTrue(hit === stack.view, "in the ribbon the press drags the stack as before")
             }
         }
     }

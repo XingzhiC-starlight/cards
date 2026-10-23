@@ -56,6 +56,8 @@ commands and observable proof.
   the loop, Pop, ↩ Stack and the count badge.
 - [Hide all](./hide-all.md): the ribbon's Hide all / Show all toggle, the ribbon-only stack, and
   New while hidden.
+- [Arrange the stack](./arrange-stack.md): the count badge's popover that lists the stacked cards,
+  reorders them by grip drag, ⌥↑ and ⌥↓ or VoiceOver actions, and shows one on the stack.
 - [Clarity](./clarity.md): the global Clarity button, per-card collapse and expand, and what a
   collapsed card shows.
 - [Delete a card](./delete-card.md): the trash button, its confirmation, and the file leaving the
