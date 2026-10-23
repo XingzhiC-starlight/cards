@@ -48,9 +48,7 @@ final class DeskController {
         let carriedSelection: NSRange? = if case .pop = command { stackWindow.editingSelection } else { nil }
         let arrived = desk.apply(command)
         let desktopFull = arrived == nil && desk.firstFreeSlot == nil
-        // New and Pop while hidden show only what they brought out.
-        if let arrived { visibility.reveal(arrived) }
-        if case .new = command, desktopFull { visibility.revealStackCard() }
+        visibility.reveal(after: command, arrived: arrived, in: desk)
         let typing: CardID? = if case .writeBlank = command { desk.selectedCard?.id } else { command.typedCard }
         scheduleSave()
         summarizer.sync(desk.allCards, typing: typing)

@@ -519,6 +519,19 @@ enum Visibility: Equatable {
         guard case .hidden(let revealed, _) = self else { return }
         self = .hidden(revealed: revealed, stackCard: true)
     }
+
+    /// What `command`, just applied to `desk`, brings back while hidden. New and Pop reveal the
+    /// card they brought out. New on a full desktop reveals the stack's blank page, and the
+    /// arranger's row reveals the stack's card area, so the card it turned to can be seen. Moving
+    /// cards in the arranger reveals nothing.
+    mutating func reveal(after command: Command, arrived: CardID?, in desk: Desk) {
+        if let arrived { reveal(arrived) }
+        switch command {
+        case .new where arrived == nil && desk.firstFreeSlot == nil: revealStackCard()
+        case .showStacked(let id) where desk.selectedCard?.id == id: revealStackCard()
+        default: break
+        }
+    }
 }
 
 // MARK: - What the sidecar remembers

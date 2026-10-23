@@ -62,6 +62,58 @@ final class VisibilityTests: XCTestCase {
         XCTAssertFalse(visibility.shows(first), "the hidden one does not")
     }
 
+    private func deskWithStack(_ names: String...) -> Desk {
+        Desk(notes: Dictionary(uniqueKeysWithValues: names.map { (id($0), Note(header: $0, body: [])) }),
+             saved: SavedDesk(stack: names.map(id)))
+    }
+
+    func testShowingAStackedCardWhileHiddenBringsBackTheStacksCardAreaAndNothingElse() {
+        var desk = deskWithStack("a", "b")
+        let arrived = desk.apply(.new(at: Date(timeIntervalSince1970: 1_700_000_000)))!
+        var visibility = Visibility.hideAll
+        let command = Command.showStacked(id("b"))
+        let shownCard = desk.apply(command)
+        visibility.reveal(after: command, arrived: shownCard, in: desk)
+        XCTAssertTrue(visibility.showsStackCard, "the stack's card area is back, to show the card")
+        XCTAssertFalse(visibility.shows(arrived), "a popped card stays hidden")
+        XCTAssertTrue(visibility.isHidden, "and Hide all is still on")
+    }
+
+    func testMovingStackedCardsOrShowingAnUnknownOneWhileHiddenRevealsNothing() {
+        var desk = deskWithStack("a", "b")
+        var visibility = Visibility.hideAll
+        for command in [Command.arrange(id("b"), at: 0), .arrange(id("ghost"), at: 0), .showStacked(id("ghost"))] {
+            let arrived = desk.apply(command)
+            visibility.reveal(after: command, arrived: arrived, in: desk)
+        }
+        XCTAssertEqual(visibility, .hideAll, "a move changes the order, not what is on screen")
+    }
+
+    func testNewAndPopStillRevealWhatTheyBringOut() {
+        var desk = deskWithStack("a")
+        var visibility = Visibility.hideAll
+        let made = Command.new(at: Date(timeIntervalSince1970: 1_700_000_000))
+        let arrived = desk.apply(made)
+        visibility.reveal(after: made, arrived: arrived, in: desk)
+        XCTAssertTrue(visibility.shows(arrived!), "New shows the new card")
+        XCTAssertFalse(visibility.showsStackCard, "and not the stack's card area")
+        let popped = desk.apply(.pop)
+        visibility.reveal(after: .pop, arrived: popped, in: desk)
+        XCTAssertTrue(visibility.shows(popped!), "Pop shows the card it took")
+    }
+
+    func testNewOnAFullDesktopWhileHiddenShowsTheStacksBlankPage() {
+        var desk = Desk(notes: Dictionary(uniqueKeysWithValues: (0...19).map { (id("c\($0)"), Note(header: "c", body: [])) }),
+                        saved: SavedDesk(placements: Slot.all.filter { $0 != Slot.stackHome }.enumerated()
+                            .map { SavedPlacement(slot: $1.index, card: id("c\($0)")) }, stack: [id("c19")]))
+        var visibility = Visibility.hideAll
+        let made = Command.new(at: Date(timeIntervalSince1970: 1_700_000_000))
+        let arrived = desk.apply(made)
+        visibility.reveal(after: made, arrived: arrived, in: desk)
+        XCTAssertNil(arrived, "the desktop is full, so nothing arrives")
+        XCTAssertTrue(visibility.showsStackCard, "the blank page it shows needs the card area")
+    }
+
     func testTheRibbonOnlyWindowIsTheTopOfTheStacksCell() {
         let cell = CGRect(x: 0, y: 700, width: 302, height: 237)
         let frame = StackWindow.ribbonOnlyFrame(in: cell)
