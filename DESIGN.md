@@ -88,23 +88,34 @@ func send(_ command: Command) {
 - **Derived, idempotent side effects.** `render()` compares the desk with the real windows,
   `Library.save` with the disk, and `Summarizer.sync` with the requests in flight. Each is safe
   to run any number of times.
-- **Editor.** TextKit 1. The text storage holds exactly the note's text. A body line's list kind
-  is a paragraph attribute and its marker is drawn in the indent, so a marker can never be
-  half-deleted. Paragraph 0 is restyled as the header after every change.
-- **A level is part of the line.** `Line` carries `level` (0 to 2) beside its kind; plain lines are
-  always 0. The editor stores it in the same paragraph attribute as the kind, and the indent and
-  the bullet shape derive from it. One pure function, `tidyLevels`, is the whole nesting rule: no
-  item more than one level deeper than the list item above it, level 0 after a plain line, never
-  past 2. Every edit, every file read and every paste end with it, so no path needs its own
-  orphan handling. `listNumbers` counts per parent: a deeper run restarts at 1 and the parent's
-  run resumes after it. Tab, Shift-Tab, and Enter or Backspace on a nested item are pure
-  decisions in `Typing`, like the existing list rules; a move takes the item and every deeper
-  line after it as one block, and is refused whole if any line would pass level 2.
+- **Editor.** TextKit 1. The text storage holds exactly the note's text. A body line's shape
+  (its kind and level) is a paragraph attribute and its marker is drawn in the indent, so a
+  marker can never be half-deleted. Fonts and indents are re-derived from the content after
+  every change; that pass never writes the shape attribute, so undo restores shapes exactly.
+- **A level is part of the line.** A `Line` is a `LineShape` (kind plus a `Level`, 0 to 2) and its
+  runs. `LineShape` drops the level of a plain line, so plain text always sits at the left edge.
+  One pure function, `tidyLevels`, is the whole nesting rule: no item more than one level deeper
+  than the list item above it, level 0 after a plain line, never past 2. `Note.init` applies it,
+  so no `Note` holds a skipped level, whether it came from a file, the editor, a paste or a test.
+  `listNumbers` counts per parent: a deeper run restarts at 1 and the parent's run resumes after
+  it. Tab, Shift-Tab, Enter, Backspace and the list buttons are pure decisions in `Typing` over
+  the body's shapes; a move takes the item and every deeper line after it as one block, and Tab
+  is refused whole when the result would not already be tidy, so it can't drift from the rule.
+- **One writer of shapes.** In the editor the paragraph attribute holds `"bullet"` at the top
+  level, as before levels, and `"bullet:1"` deeper. `applyShapes` is its only writer and
+  registers undo; every key decision ends there. After any edit the shapes are tidied the same
+  way, in the edit's own undo group, so one undo of a deleted parent also brings back its
+  child's level. While undoing or redoing, the tidy only checks afterwards without registering:
+  the states undo brings back were tidy, and a change registered mid-undo would land on the redo
+  stack. An edit that removes a line break starts its own undo step for the same reason.
 - **The clipboard is a file boundary.** Copy and paste go through `Clipboard`, not the text
-  view's own RTF: copy writes the selected lines as the card file's Markdown (sharing `Note`'s
-  writer) plus an HTML nested list; paste reads an HTML list if one is there, else the plain text
-  through `Note`'s reader with extra bullet marks (`•◦▪·‣`, `1)`). The result is a run of `Line`s
-  that the editor splices in at the caret, then tidies, as one undo step.
+  view's own RTF. Copy writes the touched lines as the card file's Markdown (through `Note`'s
+  writer) plus an HTML nested list; a selection inside one line is only its text. Paste reads an
+  HTML list if one is there, with a hand-written tolerant reader. Otherwise each line of the
+  text is first rewritten into the file grammar (`•◦▪·‣` bullets, `1)` numbers, `#` headings,
+  Markdown's backslash rule) and read by `Note`'s one reader. `Clipboard.paste` splices the run
+  into the note as a pure function; the editor then replaces only the paragraphs that changed, in
+  one undo step.
 - **Summaries.** A summary records the fingerprint of the note it describes; it is fresh only
   while that matches. Spinner, failure and "no key" are derived, not stored as flags.
 
@@ -239,6 +250,15 @@ Later changes, after trying the app:
   exchange for every card having a summary under the same rules.
 - We accept the Keychain for the API key, which may ask for access again after each rebuild of an
   unsigned debug build.
+- We accept that an empty last list item keeps its shape only in the typing attributes, as an
+  empty last line's kind always did: it has no character to hold the attribute. It is lost on
+  reload, and after typing in it then undoing, it shows the shape of the line above until the
+  next undo.
+- We accept that a nested card is rewritten with 4-space indents only when it is next saved for
+  another reason, since saving compares notes, not file text.
+- We accept owning an HTML reader (about 200 lines) in exchange for one that is pure, tested on
+  fixtures shaped like Notes, Google Docs, the Claude app and web pages, keeps checkboxes and never
+  touches WebKit during a paste.
 
 ## Alternatives considered
 
@@ -276,3 +296,10 @@ Later changes, after trying the app:
   same outline as an empty slot.
 - Tab where no item can nest (the header, a plain line, a list's first item) types a tab
   character, as before nesting existed. Paste and Match Style is not offered.
+- Shift-Tab on the header or a plain line does nothing, so the keyboard never leaves the card.
+  Tab on a selection that holds an item which can't move (a list's first item) moves nothing,
+  and never replaces the selection with a tab.
+- A multi-line paste inside text puts the text after the caret at the end of the last pasted
+  line, as pasting in any text editor does.
+- Pasted text keeps a backslash that Markdown keeps (`C:\Users`, `a\nb`); only a backslash before
+  punctuation escapes it.

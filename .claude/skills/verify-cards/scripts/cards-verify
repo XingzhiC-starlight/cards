@@ -9,6 +9,7 @@ DERIVED="$REPO/build/VerifyDerivedData"
 APP="$DERIVED/Build/Products/Debug/Cards.app"
 BIN="$APP/Contents/MacOS/Cards"
 AX="$REPO/build/verify-tools/cards-ax"
+CLIP="$REPO/build/verify-tools/cards-clip"
 RUNS="$REPO/build/verify-runs"
 EVIDENCE_ROOT="$REPO/build/verify-evidence"
 
@@ -21,6 +22,10 @@ cards-verify ax COMMAND ARGS...     cards-ax against the current run's pid (tree
 cards-verify shot NAME              screenshot every window + accessibility tree into the evidence folder
 cards-verify files NAME             copy the card folder (*.md and .cards.json) into the evidence folder and print it
 cards-verify note TEXT              append a line to the run's evidence log
+cards-verify clip save              keep the owner's clipboard (every type) until restore; set refuses without it
+cards-verify clip set TEXT [HTML]   the clipboard holds TEXT as plain text, and HTML as public.html
+cards-verify clip show              the clipboard's types, plain text and HTML (what a copy wrote)
+cards-verify clip restore           put the owner's clipboard back (stop does this too if you forget)
 cards-verify stop                   quit the instance this run started, delete its temp folder, keep evidence
 cards-verify env                    print RUN_ID, PID, FOLDER, EVIDENCE of the current run
 EOF
@@ -45,11 +50,14 @@ log() { echo "$(date '+%H:%M:%S') $*" | tee -a "$EVIDENCE/log.txt"; }
 build() {
   xcodebuild -project "$REPO/Cards.xcodeproj" -scheme Cards -configuration Debug \
     -derivedDataPath "$DERIVED" build -quiet
-  local src="$SKILL_DIR/scripts/cards-ax.swift"
-  if [[ ! -x "$AX" || "$src" -nt "$AX" ]]; then
-    mkdir -p "$(dirname "$AX")"
-    swiftc -O "$src" -o "$AX"
-  fi
+  local tool src
+  for tool in cards-ax cards-clip; do
+    src="$SKILL_DIR/scripts/$tool.swift"
+    if [[ ! -x "$REPO/build/verify-tools/$tool" || "$src" -nt "$REPO/build/verify-tools/$tool" ]]; then
+      mkdir -p "$REPO/build/verify-tools"
+      swiftc -O "$src" -o "$REPO/build/verify-tools/$tool"
+    fi
+  done
   echo "built $APP"
 }
 
@@ -154,7 +162,27 @@ files() {
   return 0
 }
 
+# The owner's clipboard waits here between `clip save` and `clip restore`.
+SAVED_CLIPBOARD="$RUNS/saved-clipboard.plist"
+
+clip() {
+  [[ -x "$CLIP" ]] || die "not built; run: cards-verify build"
+  case "${1:-}" in
+    save)
+      [[ -f "$SAVED_CLIPBOARD" ]] && die "the owner's clipboard is already saved; restore it first: cards-verify clip restore"
+      mkdir -p "$RUNS"
+      "$CLIP" save "$SAVED_CLIPBOARD" ;;
+    restore) "$CLIP" restore "$SAVED_CLIPBOARD" ;;
+    set)
+      [[ -f "$SAVED_CLIPBOARD" ]] || die "save the owner's clipboard first: cards-verify clip save"
+      shift; "$CLIP" set "$@" ;;
+    show) "$CLIP" show ;;
+    *) die "clip save | set TEXT [HTML] | show | restore" ;;
+  esac
+}
+
 stop() {
+  if [[ -f "$SAVED_CLIPBOARD" ]]; then "$CLIP" restore "$SAVED_CLIPBOARD"; fi
   current
   if ours; then
     kill "$PID"
@@ -177,6 +205,7 @@ case "${1:-}" in
   shot) shot "${2:?NAME}" ;;
   files) files "${2:?NAME}" ;;
   note) current; log "${2:?TEXT}" ;;
+  clip) shift; clip "$@" ;;
   stop) stop ;;
   env) current; cat "$RUNS/current.env" ;;
   *) usage ;;
