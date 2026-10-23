@@ -20,6 +20,8 @@ always be grabbed back.
 - `drag-grab-back` A card at the limit can be dragged back by the strip still on screen.
 - `drag-stack` The stack moves the same way by its ribbon: snap, swap with a card, free, back
   home.
+- `drag-guide` While the button is down, a guide outlines the slot under the dragged center:
+  solid and filled where a drop would snap, dashed where it would stay free.
 
 ## How to get to it (user POV)
 
@@ -86,6 +88,14 @@ drag-before` first.
   `@1368,39`. `cv files stack-home` shows `"stackSlot" : 4` and no `stackFree`. Clarity is
   still `value="off"`, and the badge still reads 0. Run `cv shot drag-after` and `cv note
   "drag via cv ax drag: snap, swap, swap-free, free, overhang, grab back, stack"`.
+- **Guide (`drag-guide`).** Hold a drag partway with raw mouse events. Alpha is at `@684,306`, so
+  its header line is at about (855, 325). Run `cv ax mouse move 855 325` and `cv ax mouse down 855
+  325`, then `cv ax mouse drag 855 <y>` for y = 330, 345, 405, 485, 565 and 592 (one row down),
+  then `cv shot drag-guide-snap`. `cv ax windows` lists one more 342x267 window at `@684,573`,
+  and its PNG is a solid, filled outline. Run `cv ax mouse drag 1026 458` (half a cell right and
+  down) and `cv shot drag-guide-free`: the guide moves to the cell holding the center, `@1026,306`,
+  and its PNG is dashed. Drag back in steps to (855, 325) and `cv ax mouse up 855 325`: Alpha
+  stays at `@684,306` and the guide window is gone.
 
 ## Gotchas
 
@@ -106,7 +116,7 @@ drag-before` first.
   `stack` order stay as they were.
 - `cv ax tree` may list a small unnamed window (`w0 @… 84x77` with a `?` child). It is not a
   card, and `cv ax windows` does not list it. Address windows by name.
-- The guide shows only while the button is down, and `drag` is one atomic gesture, so this
-  skill cannot capture it. Report the guide's look as not verified.
+- The guide shows only while the button is down. `drag` is one atomic gesture, so capture it
+  with `mouse down` and `mouse drag` steps, as the Guide step does.
 - "Free positions survive relaunch" is not covered here: `cv stop` deletes the run's folder, and
   `cv launch` always starts a new one.

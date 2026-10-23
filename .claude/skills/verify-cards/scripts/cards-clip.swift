@@ -19,8 +19,9 @@ let board = NSPasteboard.general
 switch args.first {
 case "save":
     guard args.count == 2 else { fail("save FILE") }
-    let items: [[String: Data]] = (board.pasteboardItems ?? []).map { item in
-        Dictionary(item.types.compactMap { type in item.data(forType: type).map { (type.rawValue, $0) } }) { first, _ in first }
+    // Each item is its types in order, so a restore writes them back in the same order.
+    let items: [[[String: Any]]] = (board.pasteboardItems ?? []).map { item in
+        item.types.compactMap { type in item.data(forType: type).map { ["type": type.rawValue, "data": $0] } }
     }
     do {
         let data = try PropertyListSerialization.data(fromPropertyList: items, format: .binary, options: 0)
@@ -33,12 +34,15 @@ case "save":
 case "restore":
     guard args.count == 2 else { fail("restore FILE") }
     guard let data = FileManager.default.contents(atPath: args[1]),
-          let items = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Data]]
+          let items = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[[String: Any]]]
     else { fail("no saved clipboard at \(args[1])") }
     board.clearContents()
-    let restored = items.map { types in
+    let restored = items.map { entries in
         let item = NSPasteboardItem()
-        for (type, value) in types { item.setData(value, forType: NSPasteboard.PasteboardType(type)) }
+        for entry in entries {
+            guard let type = entry["type"] as? String, let value = entry["data"] as? Data else { continue }
+            item.setData(value, forType: NSPasteboard.PasteboardType(type))
+        }
         return item
     }
     if !restored.isEmpty, !board.writeObjects(restored) { fail("could not write the saved clipboard back; it is still in \(args[1])") }

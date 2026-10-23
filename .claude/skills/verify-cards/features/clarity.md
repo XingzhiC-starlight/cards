@@ -36,9 +36,12 @@ Preconditions:
   `Expand this card`. `cv shot clarity-on` shows the same word in reddish brown instead of soft
   brown; crop and enlarge the ribbon to compare the two PNGs.
 - **Longer body.** Flip to Beta. Run `cv ax click stack 0.985 0.6`. `cv ax tree` shows
-  `Beta card` and either `Summary unavailable` (with `No Anthropic API key. Add one in
-  Settings.` as its description) when no key is stored, or a summary once one arrives when a key
-  is stored. `cv shot clarity-beta` shows the summary line lighter than the header.
+  `Beta card`, a `Refresh summary` button, and one of three summary lines. With no key stored it
+  is `AXStaticText "No Anthropic API key. Add one in Settings." value="Summary unavailable"`: the
+  reason is the label's tooltip, which `tree` prints as its name. A key the API rejects gives the
+  same value with the API's error as the reason, such as `HTTP 401: invalid x-api-key`. A working
+  key gives a summary once one arrives. `cv shot clarity-beta` shows the summary line lighter than
+  the header.
 - **One card.** Expand only Beta. Run `cv ax press "Expand this card" stack`. The stack's
   `AXTextArea` is back with Beta's text, the card button reads `Collapse this card`, and Clarity
   still has `value="on"`.
@@ -51,11 +54,12 @@ Preconditions:
 
 ## Gotchas
 
-- The API key comes from the login Keychain at launch. On 2026-10-22 this machine had none, so
-  Beta showed `Summary unavailable`. With a key stored, Beta first shows a spinner and then real
-  text from the Anthropic API, which costs a request. Use Alpha (one body line) when a
+- The API key comes from the login Keychain at launch. On 2026-10-22 this machine had none. On
+  2026-10-23 it had one that the API rejected (`HTTP 401: invalid x-api-key`), so Beta showed
+  `Summary unavailable` either way. With a working key stored, Beta first shows a spinner and then
+  real text from the Anthropic API, which costs a request. Use Alpha (one body line) when a
   deterministic proof is enough.
 - A collapsed card has no text area, so `cv ax text` prints nothing for it, and
   `card=<title>` finds it by its header text instead.
-- The refresh button (`Refresh summary`) appears only on a collapsed card whose body wants a
-  summary.
+- The refresh button (`Refresh summary`) appears on a collapsed card whose body has two or more
+  lines, including while it shows `Summary unavailable`.

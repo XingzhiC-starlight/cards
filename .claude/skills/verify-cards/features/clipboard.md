@@ -31,24 +31,29 @@ Preconditions:
 - **`cv clip save` before the first `clip set` or ⌘C, and `cv clip restore` after the last
   paste.** The clipboard is the owner's. `clip set` refuses until it is saved, and `cv stop`
   restores it if you forget. To prove the restore, compare
-  `osascript -e 'clipboard info' | shasum` and `pbpaste | shasum` before and after; never print
-  the owner's clipboard.
+  `osascript -e 'clipboard info' | shasum` and `pbpaste | shasum` before and after: both must
+  match, since the restore writes every type back in its saved order. Never print the owner's
+  clipboard.
 
 - **Copy lines.** In `Plan`, `cv ax key cmd+up`, `cv ax key down`, `cv ax key cmd+left`, then
   `cv ax key shift+down` three times (Day one through hotel). `cv ax key cmd+c`, then
   `cv clip show` prints `public.html` and `public.utf8-plain-text`: the Markdown
   `1. Day one` / `    1. flight` / `    2. hotel` and the HTML
   `<meta charset="utf-8"><ol><li>Day one<ol><li>flight</li><li>hotel</li></ol></li></ol>`.
-- **Levels from the shallowest.** Select only flight (start of flight, one `shift+down`) and copy:
-  the Markdown is `1. flight`, at the top level.
-- **Copy text.** Start of flight, `cv ax key shift+cmd+right`, `cv ax key cmd+c`. `cv clip show`
-  lists no `public.html`, and the text is `flight`.
-- **Paste HTML.** Put the caret on an empty plain line (`cv ax key cmd+down`, `cv ax key return`
-  after a plain line). `cv clip set "$(cat plain.txt)" "$(cat list.html)"` with an HTML file
-  holding a nested `<ol>`/`<ul>` (the Claude app's shape: `<li><strong>Set up</strong> the repo<ul><li>clone it</li></ul></li>`).
-  `cv ax key cmd+v`. After 1.5 s, `cv files` shows `1. **Set up** the repo`, `    - clone it`.
-- **Undo the paste.** `cv ax key cmd+z`: `cv files` shows the empty line back and nothing pasted.
-  `cv ax key shift+cmd+z` brings the paste back.
+- **Levels from the shallowest.** Select only flight (`cv ax key cmd+up`, `cv ax key down` twice,
+  `cv ax key cmd+left`, one `shift+down`) and copy: the Markdown is `1. flight`, at the top level,
+  and the HTML `<meta charset="utf-8"><ol><li>flight</li></ol>`.
+- **Copy text.** The same keys to the start of flight, then `cv ax key shift+cmd+right`,
+  `cv ax key cmd+c`. `cv clip show` lists no `public.html`, and the text is `flight`.
+- **Paste HTML.** Put the caret on an empty plain line after the list: `cv ax key cmd+down`, then
+  `cv ax key return` twice (the first makes an empty `3.` item, the second ends the list).
+  `cv clip set $'Set up the repo\nclone it' '<ol><li><strong>Set up</strong> the repo<ul><li>clone it</li></ul></li></ol>'`
+  (the Claude app's shape) and `cv ax key cmd+v`. After 1.5 s, `cv files` shows
+  `3. **Set up** the repo`, `    - clone it` under `2. Day two`: the pasted item continues the
+  numbered list above it, as typed items do.
+- **Undo the paste.** `cv ax key cmd+z`: `cv files` shows nothing pasted and the line empty again,
+  as an empty `3. ` item (the empty last line takes the shape of the line above; see the
+  nested-lists gotchas). `cv ax key shift+cmd+z` brings the paste back.
 - **Paste terminal text.** `cv ax press New`, `cv ax type 'Terminal\n'`, then
   `cv clip set "$(printf '⏺ Done:\n\n  • Note.swift\n    ◦ tidyLevels\n      ▪ one scan\n  • Clipboard.swift\n  1) tests\n  2) the app')"`
   and `cv ax key cmd+v`. The file shows `⏺ Done:` as plain text, `- Note.swift`,
