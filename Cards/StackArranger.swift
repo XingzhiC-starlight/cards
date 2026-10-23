@@ -159,6 +159,7 @@ final class StackArranger: NSObject {
         patching = false
         table.enumerateAvailableRowViews { view, row in
             if let view = view as? ArrangerRow { configure(view, row: row) }
+            if let cell = view.view(atColumn: 0) as? ArrangerCell { configure(cell, row: row) }
         }
         if let id = selectedID, new.position(of: id) == nil { selectedID = new.opening }
         select(selectedID)
@@ -194,8 +195,9 @@ final class StackArranger: NSObject {
 
     @objc private func rowClicked() {
         let row = table.clickedRow
-        guard arrangement.rows.indices.contains(row),
-              !ArrangerRow.isGrip(x: table.lastMouseDown.x - table.rect(ofRow: row).minX) else { return }
+        guard arrangement.rows.indices.contains(row) else { return }
+        let rect = table.rect(ofRow: row)
+        guard !ArrangerCell.isGrip(x: table.lastMouseDown.x - rect.minX, rowWidth: rect.width) else { return }
         send(.showStacked(arrangement.rows[row].id))
     }
 
@@ -209,8 +211,12 @@ final class StackArranger: NSObject {
     }
 
     private func configure(_ view: ArrangerRow, row: Int) {
+        view.isCurrent = arrangement.rows[row].id == arrangement.current
+    }
+
+    private func configure(_ cell: ArrangerCell, row: Int) {
         let card = arrangement.rows[row]
-        view.show(card, spoken: arrangement.spokenRow(at: row), isCurrent: card.id == arrangement.current)
+        cell.show(card, spoken: arrangement.spokenRow(at: row), isCurrent: card.id == arrangement.current)
     }
 
     private func resize() {
@@ -300,28 +306,32 @@ final class StackArranger: NSObject {
 extension StackArranger: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int { arrangement.rows.count }
 
-    /// The row view is the whole row: grip, title, selection and the VoiceOver element. No cell view.
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-        let view: ArrangerRow
-        if let reused = tableView.makeView(withIdentifier: ArrangerRow.reuse, owner: nil) as? ArrangerRow {
-            view = reused
-        } else {
-            view = ArrangerRow()
-            view.onStep = { [unowned self, unowned view] step in
-                select(view.cardID)
-                nudge(step)
-            }
-            view.onPress = { [unowned self, unowned view] in
-                guard let id = view.cardID else { return }
-                select(id)
-                send(.showStacked(id))
-            }
-        }
+        let view = (tableView.makeView(withIdentifier: ArrangerRow.reuse, owner: nil) as? ArrangerRow) ?? ArrangerRow()
         configure(view, row: row)
         return view
     }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? { nil }
+    /// Cells are reused, so each action looks up the card its cell shows at the moment it runs.
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let cell: ArrangerCell
+        if let reused = tableView.makeView(withIdentifier: ArrangerCell.reuse, owner: nil) as? ArrangerCell {
+            cell = reused
+        } else {
+            cell = ArrangerCell()
+            cell.onStep = { [unowned self, unowned cell] step in
+                select(cell.cardID)
+                nudge(step)
+            }
+            cell.onPress = { [unowned self, unowned cell] in
+                guard let id = cell.cardID else { return }
+                select(id)
+                send(.showStacked(id))
+            }
+        }
+        configure(cell, row: row)
+        return cell
+    }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard !patching else { return }
@@ -400,7 +410,8 @@ final class ArrangerTable: NSTableView {
 
     override func canDragRows(with rowIndexes: IndexSet, at mouseDownPoint: NSPoint) -> Bool {
         let row = row(at: mouseDownPoint)
-        return row >= 0 && ArrangerRow.isGrip(x: mouseDownPoint.x - rect(ofRow: row).minX)
+        let rect = rect(ofRow: row)
+        return row >= 0 && ArrangerCell.isGrip(x: mouseDownPoint.x - rect.minX, rowWidth: rect.width)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -419,22 +430,53 @@ final class ArrangerTable: NSTableView {
     }
 }
 
-/// One row. It is the single VoiceOver element: "<title>, 3 of 7", plus ", current card" for the
-/// shown one, with Move up and Move down in the actions menu, and press shows the card. Its
-/// grip and title are not elements, so the row is read once.
+/// The row's background: the keyboard's row in Cards' own highlight rather than the system's blue,
+/// and the shown card's row fainter.
 final class ArrangerRow: NSTableRowView {
     static let reuse = NSUserInterfaceItemIdentifier("arranger-row")
+
+    var isCurrent = false {
+        didSet { if isCurrent != oldValue { needsDisplay = true } }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        identifier = Self.reuse
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard isCurrent else { return }
+        Palette.highlight.withAlphaComponent(0.5).setFill()
+        highlightShape.fill()
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        Palette.highlight.setFill()
+        highlightShape.fill()
+    }
+
+    private var highlightShape: NSBezierPath { NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 5, yRadius: 5) }
+}
+
+/// What a row shows, and what VoiceOver reads for it: "<title>, 3 of 7", plus ", current card" for
+/// the shown one, with Move up and Move down in the actions menu, and press shows the card. Its
+/// grip and title are not elements, so the row is read once.
+final class ArrangerCell: NSTableCellView {
+    static let reuse = NSUserInterfaceItemIdentifier("arranger-cell")
     static let gripWidth: CGFloat = 30
+    private static let titleInset: CGFloat = 12
 
     let grip = GripView()
     private let title = NSTextField(labelWithString: "")
     private var spoken = ""
-    private var isCurrent = false
     private(set) var cardID: CardID?
     var onStep: (Arrangement.Step) -> Void = { _ in }
     var onPress: () -> Void = {}
 
-    static func isGrip(x: CGFloat) -> Bool { x >= 0 && x < gripWidth }
+    /// The grip is the strip at the row's trailing edge; `x` is measured from the row's leading edge.
+    static func isGrip(x: CGFloat, rowWidth: CGFloat) -> Bool { x >= rowWidth - gripWidth && x <= rowWidth }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -445,6 +487,10 @@ final class ArrangerRow: NSTableRowView {
         title.setAccessibilityElement(false)
         addSubview(grip)
         addSubview(title)
+        setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Move up") { [weak self] in self?.onStep(.up); return true },
+            NSAccessibilityCustomAction(name: "Move down") { [weak self] in self?.onStep(.down); return true },
+        ])
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -454,38 +500,23 @@ final class ArrangerRow: NSTableRowView {
         title.stringValue = row.title
         title.font = .systemFont(ofSize: 12, weight: isCurrent ? .semibold : .regular)
         self.spoken = spoken
-        if self.isCurrent != isCurrent {
-            self.isCurrent = isCurrent
-            needsDisplay = true
-        }
     }
 
-    /// Every press lands on the row, so the table sees the click or the drag whatever it hit.
+    /// Every press lands on the cell, so the table sees the click or the drag whatever it hit.
     override func hitTest(_ point: NSPoint) -> NSView? { super.hitTest(point) == nil ? nil : self }
 
     override func layout() {
         super.layout()
-        grip.frame = NSRect(x: 0, y: 0, width: Self.gripWidth, height: bounds.height)
+        grip.frame = NSRect(x: bounds.width - Self.gripWidth, y: 0, width: Self.gripWidth, height: bounds.height)
         let height = title.intrinsicContentSize.height
-        title.frame = NSRect(x: Self.gripWidth, y: (bounds.height - height) / 2,
-                             width: max(bounds.width - Self.gripWidth - 10, 0), height: height)
+        title.frame = NSRect(x: Self.titleInset, y: (bounds.height - height) / 2,
+                             width: max(bounds.width - Self.gripWidth - Self.titleInset, 0), height: height)
     }
 
-    /// The shown card, fainter than the keyboard's row.
-    override func drawBackground(in dirtyRect: NSRect) {
-        guard isCurrent else { return }
-        Palette.highlight.withAlphaComponent(0.5).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 5, yRadius: 5).fill()
-    }
-
-    /// The keyboard's row, in Cards' own highlight rather than the system's blue.
-    override func drawSelection(in dirtyRect: NSRect) {
-        Palette.highlight.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 1), xRadius: 5, yRadius: 5).fill()
-    }
-
-    override func isAccessibilityElement() -> Bool { true }
-    override func accessibilityRole() -> NSAccessibility.Role? { .row }
+    // NSTableView wraps every cell in its own AXCell and forwards this view's label and actions to it.
+    // Making the view an element too nests a second AXCell with the same label inside the first.
+    override func isAccessibilityElement() -> Bool { false }
+    override func accessibilityRole() -> NSAccessibility.Role? { .cell }
     override func accessibilityLabel() -> String? { spoken }
     override func accessibilityChildren() -> [Any]? { [] }
 
@@ -493,14 +524,9 @@ final class ArrangerRow: NSTableRowView {
         onPress()
         return true
     }
-
-    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
-        [NSAccessibilityCustomAction(name: "Move up") { [weak self] in self?.onStep(.up); return true },
-         NSAccessibilityCustomAction(name: "Move down") { [weak self] in self?.onStep(.down); return true }]
-    }
 }
 
-/// ≡ in the strip at a row's left. The only place a drag starts. Not a VoiceOver element.
+/// ≡ in the strip at a row's right. The only place a drag starts. Not a VoiceOver element.
 final class GripView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)

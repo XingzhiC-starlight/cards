@@ -162,15 +162,14 @@ final class StackArrangerTests: XCTestCase {
     }
 
     func testARowReadsItsTitlePlaceAndCurrentMarkAndOffersMoveUpMoveDownAndPress() throws {
-        let row = ArrangerRow()
+        let row = ArrangerCell()
         var pressed = 0
         var steps: [Arrangement.Step] = []
         row.onPress = { pressed += 1 }
         row.onStep = { steps.append($0) }
         row.show(StackRow(id: id("a"), title: "Groceries"), spoken: "Groceries, 3 of 7, current card", isCurrent: true)
-        XCTAssertTrue(row.isAccessibilityElement(), "the row is the element")
         XCTAssertEqual(row.accessibilityLabel(), "Groceries, 3 of 7, current card")
-        XCTAssertEqual(row.accessibilityRole(), .row)
+        XCTAssertEqual(row.accessibilityRole(), .cell)
         XCTAssertEqual((row.accessibilityChildren() ?? []).count, 0, "its grip and title are not read separately")
         XCTAssertFalse(row.grip.isAccessibilityElement(), "the grip is hidden from VoiceOver")
         let actions = try XCTUnwrap(row.accessibilityCustomActions())
@@ -181,13 +180,26 @@ final class StackArrangerTests: XCTestCase {
         XCTAssertEqual(steps, [.up, .down], "the actions step the card")
     }
 
-    func testOnlyAPressOnTheGripCanStartADrag() {
+    func testOnlyAPressOnTheGripAtTheRowsRightEdgeCanStartADrag() {
         let table = StackArranger(send: { _ in }).table
-        XCTAssertTrue(ArrangerRow.isGrip(x: 10), "the strip at the left is the grip")
-        XCTAssertFalse(ArrangerRow.isGrip(x: ArrangerRow.gripWidth + 1), "the name is not")
-        XCTAssertFalse(ArrangerRow.isGrip(x: -1))
+        let width: CGFloat = 260
+        XCTAssertTrue(ArrangerCell.isGrip(x: width - 10, rowWidth: width), "the strip at the right is the grip")
+        XCTAssertTrue(ArrangerCell.isGrip(x: width - ArrangerCell.gripWidth, rowWidth: width), "from its leading edge")
+        XCTAssertFalse(ArrangerCell.isGrip(x: width - ArrangerCell.gripWidth - 1, rowWidth: width), "the name is not")
+        XCTAssertFalse(ArrangerCell.isGrip(x: 10, rowWidth: width), "and neither is the row's left end")
         XCTAssertEqual(table.numberOfColumns, 1, "one column, no header")
         XCTAssertNil(table.headerView)
+    }
+
+    func testTheGripSitsAtTheRightEdgeAndTheTitleStopsBeforeIt() {
+        let cell = ArrangerCell(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        cell.show(StackRow(id: id("a"), title: String(repeating: "A very long header ", count: 8)), spoken: "", isCurrent: false)
+        cell.layoutSubtreeIfNeeded()
+        XCTAssertEqual(cell.grip.frame.maxX, 260, "the grip ends at the trailing edge")
+        XCTAssertEqual(cell.grip.frame.width, ArrangerCell.gripWidth)
+        let title = cell.subviews.compactMap { $0 as? NSTextField }.first!
+        XCTAssertLessThan(title.frame.minX, 20, "the title starts at the left edge")
+        XCTAssertLessThanOrEqual(title.frame.maxX, cell.grip.frame.minX, "and truncates before the grip")
     }
 
     func testTheContentGrowsToTenRowsThenScrolls() {
