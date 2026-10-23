@@ -116,7 +116,8 @@ private final class StackView: NSView {
             toggleButton.toolTip = help
         }
     }
-    private let badge = PassiveLabel(labelWithString: "0")
+    private let badge = CountBadge()
+    private let arranger: StackArranger
     private let fullLabel = NSTextField(labelWithString: "Desktop full")
     private var hoveredEdge: Edge? {
         didSet { if hoveredEdge != oldValue { needsDisplay = true } }
@@ -129,6 +130,7 @@ private final class StackView: NSView {
 
     init(send: @escaping (Command) -> Void, menu: @escaping () -> NSMenu, toggleHidden: @escaping () -> Void) {
         self.send = send
+        arranger = StackArranger(send: send)
         cardView = CardView(home: .stack, send: send)
         clarityButton = ActionButton(title: "Clarity", help: "") { send(.toggleClarity) }
         toggleButton = ActionButton(symbol: "eye", help: "Hide all") { toggleHidden() }
@@ -156,12 +158,7 @@ private final class StackView: NSView {
         cardView.onEditingChange = { [unowned self] editing in self.cardEditing = editing }
         addSubview(cardView)
 
-        badge.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-        badge.textColor = Palette.ribbonInk
-        badge.alignment = .center
-        badge.wantsLayer = true
-        badge.layer?.cornerRadius = 8
-        badge.toolTip = "Cards in the stack"
+        badge.handler = { [unowned self] in arranger.toggle(relativeTo: badge.frame, of: self) }
         addSubview(badge)
 
         fullLabel.font = .systemFont(ofSize: 11, weight: .semibold)
@@ -186,7 +183,8 @@ private final class StackView: NSView {
         }
         allHidden = visibility.isHidden
         cardView.apply(face.selected, desktopFull: face.desktopFull)
-        badge.stringValue = "\(face.count)"
+        badge.show(count: face.count)
+        arranger.apply(face.arrangement)
         fullLabel.isHidden = !face.desktopFull
         clarityButton.contentTintColor = face.clarity ? Palette.accent : Palette.inkSoft
         clarityButton.toolTip = face.clarity ? "Clarity is on: click to expand every card"
@@ -258,6 +256,7 @@ private final class StackView: NSView {
         let room = max(trailing - toolbar.frame.maxX - 2 * 8, 0)
         let fullWidth = min(fullLabel.fittingSize.width, room)
         fullLabel.frame = NSRect(x: trailing - 8 - fullWidth, y: ribbonMid - 9, width: fullWidth, height: 15)
+        arranger.follow(badge.isHidden || !badge.isEnabled ? nil : badge.frame)
     }
 
     // MARK: Drawing
@@ -311,7 +310,50 @@ private final class StackView: NSView {
     }
 }
 
-/// A label that takes no click, so a press on it reaches whatever is under it.
-private final class PassiveLabel: NSTextField {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+/// The count of stacked cards, and the button that opens the arranger. With no cards it is
+/// disabled and takes no click, so a press on it reaches whatever is under it, as it did when the
+/// badge was a plain label.
+private final class CountBadge: NSButton {
+    var handler: () -> Void = {}
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        isBordered = false
+        font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        contentTintColor = Palette.ribbonInk
+        alignment = .center
+        focusRingType = .exterior
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        toolTip = "Arrange the stack"
+        target = self
+        action = #selector(fire)
+        show(count: 0)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func show(count: Int) {
+        title = "\(count)"
+        isEnabled = count > 0
+        setAccessibilityLabel(count == 1 ? "1 card in the stack" : "\(count) cards in the stack")
+        invalidateIntrinsicContentSize()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: ceil((title as NSString).size(withAttributes: [.font: font as Any]).width) + 4, height: 14)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { isEnabled ? super.hitTest(point) : nil }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// A click leaves the card's caret where it is; Tab reaches the badge only with full keyboard access.
+    override var acceptsFirstResponder: Bool { NSApp.isFullKeyboardAccessEnabled && isEnabled }
+
+    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill() }
+
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    @objc private func fire() { handler() }
 }
