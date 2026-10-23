@@ -266,12 +266,12 @@ private final class StackView: NSView {
         let lineWidth: CGFloat = cardEditing ? 2 : 1
         CardShape.fillGlass(in: bounds, lineWidth: lineWidth, ribbon: ribbonRect)
         if let edge = hoveredEdge {
+            let band = EdgeBands.rect(of: edge, in: bounds)
             NSGraphicsContext.saveGraphicsState()
             CardShape.path(in: bounds, lineWidth: lineWidth).addClip()
             Palette.shade.setFill()
-            EdgeBands.rect(of: edge, in: bounds).fill()
+            band.fill()
             NSGraphicsContext.restoreGraphicsState()
-            let band = EdgeBands.rect(of: edge, in: bounds)
             let chevron = NSAttributedString(string: edge.direction == .previous ? "‹" : "›", attributes: [
                 .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
                 .foregroundColor: Palette.inkSoft,
