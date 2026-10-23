@@ -85,6 +85,8 @@ final class StackArranger: NSObject {
     private(set) var selectedID: CardID?
     /// The card whose grip is being dragged.
     private var dragging: CardID?
+    /// The gap the last `validateDrop` chose, so a move into the other half of a row asks again.
+    private var dropGap: Int?
     /// A table update is running, so selection callbacks index a half-updated table.
     private var patching = false
     private weak var anchorView: NSView?
@@ -252,6 +254,7 @@ final class StackArranger: NSObject {
         table.draggingDestinationFeedbackStyle = .regular   // the standard insertion line
         table.setAccessibilityLabel("Stack order")
         table.onKey = { [unowned self] key in handle(key) }
+        table.dropIsStale = { [unowned self] info in dropGap != nil && pointerGap(info) != dropGap }
 
         scroll.documentView = table
         scroll.hasVerticalScroller = true
@@ -280,6 +283,12 @@ final class StackArranger: NSObject {
     }
 
     // MARK: Pure helpers
+
+    /// The gap a drop at `y` (in the flipped table, from its top) goes into: above a row from its
+    /// upper half, below it from its lower half, counted with the dragged row still in the list.
+    static func gap(atY y: CGFloat, rowCount: Int) -> Int {
+        min(max(Int((y / rowHeight + 0.5).rounded(.down)), 0), rowCount)
+    }
 
     /// NSTableView proposes "drop above row `gap`", counted with the dragged row still in the
     /// list, so the card's final index is one less when it came from above the gap. Nil: it
@@ -344,6 +353,7 @@ extension StackArranger: NSTableViewDataSource, NSTableViewDelegate {
         guard arrangement.rows.indices.contains(row) else { return nil }
         let id = arrangement.rows[row].id
         dragging = id
+        dropGap = nil
         let item = NSPasteboardItem()
         item.setString(id.rawValue, forType: Self.rowType)
         return item
@@ -359,17 +369,19 @@ extension StackArranger: NSTableViewDataSource, NSTableViewDelegate {
         dragging = nil
     }
 
-    // Drop target. A card that left the stack mid-drag is refused here: AppKit has no API to cancel a session.
+    // Drop target. The proposal is ignored: the gap comes from the pointer. A card that left the
+    // stack mid-drag is refused here: AppKit has no API to cancel a session.
     func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
-        guard let id = dragging, let from = arrangement.position(of: id) else { return [] }
-        var gap = row
-        if dropOperation == .on {
-            let pointer = tableView.convert(info.draggingLocation, from: nil)
-            if pointer.y > tableView.rect(ofRow: row).midY { gap += 1 }
-        }
+        guard let id = dragging, let from = arrangement.position(of: id), let gap = pointerGap(info) else { return [] }
+        dropGap = gap
         tableView.setDropRow(gap, dropOperation: .above)
         return Self.landing(from: from, gap: gap) == nil ? [] : .move
+    }
+
+    private func pointerGap(_ info: NSDraggingInfo) -> Int? {
+        guard dragging != nil else { return nil }
+        return Self.gap(atY: table.convert(info.draggingLocation, from: nil).y, rowCount: arrangement.rows.count)
     }
 
     func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
@@ -405,6 +417,8 @@ extension StackArranger: NSPopoverDelegate {
 /// before the table's own key handling sees them.
 final class ArrangerTable: NSTableView {
     var onKey: (ArrangerKey) -> Void = { _ in }
+    /// The pointer has moved to another gap than the drop row shows.
+    var dropIsStale: (NSDraggingInfo) -> Bool = { _ in false }
     /// Where the last press landed, so a click on a grip that did not drag is not taken for a click on a name.
     private(set) var lastMouseDown = NSPoint.zero
 
@@ -412,6 +426,14 @@ final class ArrangerTable: NSTableView {
         let row = row(at: mouseDownPoint)
         let rect = rect(ofRow: row)
         return row >= 0 && ArrangerCell.isGrip(x: mouseDownPoint.x - rect.minX, rowWidth: rect.width)
+    }
+
+    /// NSTableView asks `validateDrop` only when its own proposal changes, and a row's whole middle is
+    /// one proposal, so the half the pointer entered by would stick. `draggingEntered` makes it
+    /// propose afresh. Setting the drop row here instead, outside `validateDrop`, hides the insertion line.
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if dropIsStale(sender) { _ = super.draggingEntered(sender) }
+        return super.draggingUpdated(sender)
     }
 
     override func mouseDown(with event: NSEvent) {
