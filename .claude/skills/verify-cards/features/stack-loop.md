@@ -66,8 +66,9 @@ Preconditions:
 - `scroll` sends a mouse-wheel event, which flips once per event. A real trackpad swipe goes
   through phases and momentum; this skill cannot produce one, so report the trackpad path as
   unverified unless a person swiped.
-- Flipping never reorders the stack: `stack` in the sidecar changes only on Pop, ↩ Stack, New
-  and delete. A flip alone writes nothing.
+- Flipping never reorders the stack: `stack` in the sidecar changes only on Pop, ↩ Stack,
+  typing on the blank page, delete and arranging. New changes `placements`, not `stack`. A flip
+  alone changes nothing in the sidecar.
 - The bands are 5% of the window. `0.985` and `0.015` stay inside them on any display; `0.95`
   can miss.
 - While Hide all is on, bands and swipes do nothing (see [Hide all](./hide-all.md)).

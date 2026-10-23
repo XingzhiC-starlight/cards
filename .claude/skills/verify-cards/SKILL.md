@@ -88,7 +88,7 @@ Stable handles in this app, all from the code:
   prints on its line (its tooltip, `Clarity is off: click to collapse every card` or `Clarity is
   on: click to expand every card`, says it too), and its text color, which only `shot` shows.
 - Card buttons (popped card, or the stack's selected card): `Collapse this card` / `Expand this
-  card`, `Refresh summary` (collapsed with a summary only), `↩ Stack` (popped only), `↗ Pop`
+  card`, `Refresh summary` (collapsed, with two or more body lines), `↩ Stack` (popped only), `↗ Pop`
   (stacked card only; `[disabled]` with the tooltip `Desktop full` while the desktop is full),
   `Delete this card`. They fade in on hover, but they are in the tree at alpha 0 too, so `press`
   works without hovering. The stack's blank page has none of them.
