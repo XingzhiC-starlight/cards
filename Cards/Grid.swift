@@ -4,7 +4,7 @@ import AppKit
 
 /// One of the 20 cells of the invisible 5 × 4 grid, numbered in pop order (left → right,
 /// top → bottom). The stack takes one like a card does, top-right until it is moved.
-struct Slot: Hashable, Comparable {
+struct Slot: Hashable {
     static let columns = 5
     static let rows = 4
     static let count = columns * rows
@@ -39,8 +39,6 @@ struct Slot: Hashable, Comparable {
     var center: GridPoint {
         GridPoint(x: (Double(column) + 0.5) / Double(Slot.columns), y: (Double(row) + 0.5) / Double(Slot.rows))
     }
-
-    static func < (a: Slot, b: Slot) -> Bool { a.index < b.index }
 }
 
 /// The center of a card-sized item as a fraction of the grid area, from the top-left (x right,
@@ -191,7 +189,7 @@ struct Grid: Equatable {
 }
 
 /// An edge of the stack window, for its invisible flipping bands.
-enum Edge: CaseIterable {
+enum Edge {
     case left, top, right, bottom
 
     /// Left/top swap in the previous stacked card; right/bottom the next.

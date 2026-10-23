@@ -4,11 +4,9 @@ import AppKit
 /// and over full-screen apps. It displays one `CardFace` and owns only transient UI state
 /// (hover, editing, a drag in progress); everything else it reports as a `Command`.
 final class CardWindow: NSWindow {
-    let cardID: CardID
     private let cardView: CardView
 
     init(id: CardID, send: @escaping (Command) -> Void, drag: WindowDrag) {
-        cardID = id
         cardView = CardView(home: .desktop(drag), send: send)
         super.init(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         configureAsCard(self, content: cardView)
