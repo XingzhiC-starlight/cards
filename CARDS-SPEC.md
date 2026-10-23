@@ -31,6 +31,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Deleting the selected card shows the one underneath.
 - At launch the stack shows its top card, or the blank page when the stack is empty.
 - The count badge counts real cards only, never the blank page.
+- The count badge is a button: it opens the stack arranger (see Arranging the stack). Its tooltip reads "Arrange the stack" (revised 2026-10-23).
 
 ## Pop / return / find space
 - Pop, the ↗ Pop button on the stacked card (revised 2026-10-22), takes the first grid slot (left→right, top→bottom) not taken by a card or the stack. A snapped card or stack takes its slot; a free one takes the slot it covers most. Other apps' windows are ignored.
@@ -58,6 +59,18 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - Edge bands stay as a click alternative: an invisible band = 5% of the stack's width/height along all four edges. Right/bottom = next, left/top = previous. On hover the band tints faintly and shows ‹ or ›. Popped cards have no bands.
 - Because of the blank page, swiping and the bands work with any number of stacked cards, including zero or one.
 - ↗ Pop takes the selected card.
+
+## Arranging the stack (new 2026-10-23)
+- Purpose: put the stacked cards in the order you want, the only way besides cards entering or leaving that the stack's order changes.
+- Opening: click the count badge, wherever it sits (the card's corner, or the ribbon under Hide all). With zero stacked cards the badge does nothing. When a narrow ribbon has dropped the badge, there is no arranger until the card area is back.
+- A popover anchored to the badge, one row per stacked card, top of the stack first. The blank page and popped cards are not listed. Each row shows the card's header ("Untitled" when empty), truncated with "…". It grows to about 10 rows, then scrolls.
+- The card the stack shows is highlighted, and the stack keeps showing that same card after any move.
+- Clicking a row's name shows that card on the stack. The popover stays open until Esc or a click outside it.
+- Moving by mouse: each row has a grip (≡) on its left; only the grip starts a drag, with the open-hand cursor over it. A standard insertion line shows where the card will land, and the list scrolls when dragged near its top or bottom. The order changes and is saved only on drop. Esc mid-drag, or dropping outside the list, cancels.
+- Moving by keyboard: the popover opens with the shown card's row selected. ↑/↓ select another row; ⌥↑/⌥↓ move the selected card one place, and it stays selected; Return or Space shows it on the stack; Esc closes (or cancels a drag first).
+- VoiceOver: the badge reads "N cards in the stack, button" and can be reached with Tab when keyboard navigation is on. Each row reads "<title>, 3 of 7", plus "current card" for the one the stack shows, with the actions Move up and Move down, and press to show the card. The grip is hidden from VoiceOver. After any move VoiceOver announces the new place, such as "Moved to 2 of 7"; moving past an end does nothing and announces "Already at the top" or "Already at the bottom".
+- The list follows the desk while open: popped, returned, new, deleted, renamed or rescanned cards update it in place. A drag whose card leaves the stack mid-drag is cancelled.
+- Each move is saved as the stack order in the sidecar, like any other change.
 
 ## Blank page (new 2026-10-22)
 - Typing its first character turns it into a real card in the same place in the loop (the bottom of the stack). The card stays selected with the cursor in it, and a new blank page appears right after it.
