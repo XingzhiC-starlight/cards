@@ -45,8 +45,10 @@ scripts/package.sh
 ```
 
 This makes a Release build and writes `build/release/Cards-<version>.dmg`. The version is the app's
-`CFBundleShortVersionString`. The script checks the app's signature, checks that the app has both
-`arm64` and `x86_64` slices, and verifies the disk image. It runs from any folder, and running it
+`CFBundleShortVersionString`. The script checks the app's signature, refuses an app that is not
+signed with the hardened runtime or that carries the `get-task-allow` debug entitlement (either one
+lets other programs read the API key from Cards' memory), checks that the app has both `arm64` and
+`x86_64` slices, and verifies the disk image. It runs from any folder, and running it
 again replaces the old image.
 
 Send that one file. The other person needs a Mac with macOS 15 or later, Apple silicon or Intel.
