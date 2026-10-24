@@ -1,6 +1,6 @@
 # Clarity
 
-Clarity collapses cards to their header and a two-line AI summary, at the same size and place.
+Clarity collapses cards to their header and an AI summary of up to three lines, at the same size and place.
 The stack's Clarity button collapses or expands every card, stacked and popped. Each card's own
 button collapses or expands just that card, and the card keeps its state when it moves.
 
@@ -15,6 +15,9 @@ button collapses or expands just that card, and the card keeps its state when it
 - `clarity-no-key` Without an API key, a longer card shows `Summary unavailable`, with the reason
   on hover.
 - `clarity-saved` Collapsed cards and the global state survive in the sidecar.
+- `clarity-three-lines` A long summary wraps onto three lines and the third ends in `…`.
+- `clarity-prompt-stamp` A saved summary shows only if the current prompt wrote it (its `prompt`
+  stamp in the sidecar); any other is dropped and requested again.
 
 ## How to get to it (user POV)
 
@@ -51,6 +54,16 @@ Preconditions:
   `value="off"` and the tooltip `Clarity is off: click to collapse every card`, every card is
   expanded, and after 1.5 s `cv files clarity-off` shows `"clarity" : false` and an empty
   `collapsed`.
+
+- **Three lines and the stamp, without the API.** Write two sidecars that hold a long summary
+  (over 150 characters) for `seed-b`, with `clarity` on and both cards collapsed: one stamped
+  with `Summary.prompt`, one without `prompt`. Build them by encoding `SavedDesk` from a
+  `main.swift` compiled with `Cards/{Desk,Grid,Note}.swift`, using `Note(markdown:).digest` of
+  Beta's seed text as `source`, so they always match the current code. Run
+  `cv launch --seed stamped.json` and flip to Beta (collapse it with its button if it shows
+  expanded). `cv shot` shows the summary on three lines ending in `…`. Then `cv stop`,
+  `cv launch --seed unstamped.json`: Beta shows `Summary unavailable` (or a spinner with a
+  working key), never the old text. On 2026-10-24 both passed.
 
 ## Gotchas
 

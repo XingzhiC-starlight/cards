@@ -528,7 +528,7 @@ final class SummaryView: NSView {
         label.font = .systemFont(ofSize: 12)
         label.textColor = Palette.inkSoft
         label.maximumNumberOfLines = Self.lineCount
-        label.lineBreakMode = .byTruncatingTail
+        label.lineBreakMode = .byWordWrapping
         label.cell?.truncatesLastVisibleLine = true
         addSubview(label)
         spinner.style = .spinning

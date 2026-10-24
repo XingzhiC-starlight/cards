@@ -172,10 +172,11 @@ struct Desk: Equatable {
     private(set) var clarity: Bool
 
     /// Rebuilds the desk from disk. `notes` decides which cards exist; `saved` only places them.
-    /// A saved summary from another prompt (or none, in a sidecar older than the stamp) is dropped,
-    /// so `Summarizer` asks for it again. Total over any input: unknown ids, invalid or doubly-used slots and duplicates are dropped,
+    /// Total over any input: unknown ids, invalid or doubly-used slots and duplicates are dropped,
     /// and cards the sidecar never heard of join the bottom of the stack in id (that is, creation)
     /// order. A missing sidecar (`SavedDesk()`) puts every card in the stack and the stack top-right.
+    /// A saved summary from another prompt (or none, in a sidecar older than the stamp) is dropped,
+    /// so `Summarizer` asks for it again.
     init(notes: [CardID: Note], saved: SavedDesk) {
         let collapsed = Set(saved.collapsed)
         var summaries: [CardID: Summary] = [:]
