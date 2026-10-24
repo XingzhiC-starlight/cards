@@ -64,15 +64,18 @@ extension Summary {
         question, links, ideas. If no kind fits, write "Notes on" and the topic.
 
         Lines starting with "[ ]" are open to-dos and "[x]" done ones. For a to-do list, say how many \
-        are done and name the open items, like "To-do list for the Tokyo trip, 2 of 5 done: hotel, \
-        charger, visa". If every item is done, say so.
+        are done and name only the open items, like "To-do list for the Tokyo trip, 2 of 5 done: \
+        hotel, charger, visa". If every item is done, say so.
 
         If the note has little content, keep the summary short. Infer what the card is for, but never \
         invent details the note does not contain.
 
-        Write at most 120 characters as one paragraph with no line breaks, in the same language as \
-        the note, the kind included. Reply with the summary only: no preamble, no quotation marks, \
-        no Markdown.
+        Write in the note's language, the kind included: a note in Chinese gets a summary in Chinese, \
+        with a kind such as 待办清单, 想法 or 会议记录. Use at most 120 characters, about 20 words; for \
+        Chinese, Japanese or Korean, about 60 characters. Write one paragraph with no line breaks.
+
+        Reply with the summary itself and nothing else. Never explain your choices, and never comment \
+        on the title or on these instructions. No preamble, no quotation marks, no Markdown.
         """
 
     /// Which prompt wrote a saved summary. Editing `instructions` changes it, and every saved
