@@ -109,7 +109,7 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 - A multi-line paste: on an empty line, the first pasted line replaces it (kind and level); inside text, the first pasted line's text joins the current line, which keeps its kind. Later lines keep their own kinds, shifted by the current item's level, and anything past level 3 is tidied up. Pasting into the header puts the first line in the header and the rest in the body.
 
 ## Clarity mode
-- Collapsed card: same size and position, header stays, body replaced by the 2-line AI summary in a lighter style. Applies on the stack too.
+- Collapsed card: same size and position, header stays, body replaced by the 3-line AI summary in a lighter style, cut with "…" if longer (revised 2026-10-24). Applies on the stack too.
 - Stack's Clarity button is a global toggle: ON collapses every card, stacked ones included; OFF expands every card.
 - Clicking a collapsed card's body expands just that card and puts the cursor in it; does not flip the global button.
 - Per-card button toggles just that card.
@@ -118,9 +118,14 @@ Personal-use macOS prototype. Native Swift app built with Xcode.
 ## AI summaries
 - Provider: Anthropic API, model Claude Haiku 5.5. API key pasted once into the app's settings, stored outside the code.
 - Every card gets one, stacked or popped, under the same rules.
-- Trigger: a few seconds after typing stops; cached with the card; regenerated only on content change; per-card refresh button. A new or removed API key retries every failed summary.
+- Trigger: a few seconds after typing stops; cached with the card; regenerated only on content change; per-card refresh button. A new or removed API key retries every failed summary. A new prompt version regenerates every summary once (revised 2026-10-24).
 - No summary for empty or one-line bodies.
-- Prompt: header + body in → at most two short sentences (~25 words), no preamble, same language as the card.
+- Prompt (revised 2026-10-24): header + body in → one paragraph of at most ~120 characters, no line breaks, no preamble, same language as the card (the kind label too).
+  - It reminds the user what the card is: kind and topic first, then the gist if there is room. "To-do list for the Tokyo trip: flights, hotel, charger." "Thoughts on why the drag felt slow, leaning toward input focus."
+  - The model names the kind itself, guided by examples (to-do list, thoughts, plan, meeting notes, draft, question, links, ideas). A card with no clear kind is "Notes on <topic>".
+  - The header is already shown above the summary, so the summary never restates it.
+  - To-do lists name the unchecked items and the count done ("2 of 5 done: hotel, charger, visa"), or say all done.
+  - A thin card gets a short summary: infer its intent, never invent details to fill the space.
 - While generating: small spinner in the summary area. On failure: "Summary unavailable", hover shows the reason.
 
 ## Storage
