@@ -52,6 +52,17 @@ final class StackArrangerTests: XCTestCase {
         XCTAssertNil(StackArranger.landing(from: 1, gap: 2), "and so is the gap just below it")
     }
 
+    func testGapIsAboveARowFromItsUpperHalfAndBelowFromItsLowerHalf() {
+        let h = StackArranger.rowHeight
+        XCTAssertEqual(StackArranger.gap(atY: 2, rowCount: 4), 0, "near the top row's top edge")
+        XCTAssertEqual(StackArranger.gap(atY: h / 2 - 6, rowCount: 4), 0, "6 points above the top row's center")
+        XCTAssertEqual(StackArranger.gap(atY: h / 2 + 6, rowCount: 4), 1, "6 points below it")
+        XCTAssertEqual(StackArranger.gap(atY: h + h / 2 - 6, rowCount: 4), 1, "upper half of the second row")
+        XCTAssertEqual(StackArranger.gap(atY: 3 * h + h / 2 + 6, rowCount: 4), 4, "lower half of the last row")
+        XCTAssertEqual(StackArranger.gap(atY: -3, rowCount: 4), 0, "above the list")
+        XCTAssertEqual(StackArranger.gap(atY: 10 * h, rowCount: 4), 4, "below the last row")
+    }
+
     func testRowBatchIsOneRemovalAndOneInsertionForAMove() {
         let batch = StackArranger.rowBatch(from: rows("a", "b", "c", "d"), to: rows("c", "a", "b", "d"))
         XCTAssertEqual(batch.removals, [2], "c leaves its old index")
