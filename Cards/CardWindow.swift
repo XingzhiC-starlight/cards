@@ -516,9 +516,10 @@ final class SlotGuide: NSWindow {
     }
 }
 
-/// A collapsed card's body: two lines of lighter summary text, a small spinner, or
+/// A collapsed card's body: up to three lines of lighter summary text, a small spinner, or
 /// "Summary unavailable" with the reason as its tooltip.
 final class SummaryView: NSView {
+    private static let lineCount = 3
     private let label = NSTextField(wrappingLabelWithString: "")
     private let spinner = NSProgressIndicator()
 
@@ -526,7 +527,7 @@ final class SummaryView: NSView {
         super.init(frame: frame)
         label.font = .systemFont(ofSize: 12)
         label.textColor = Palette.inkSoft
-        label.maximumNumberOfLines = 2
+        label.maximumNumberOfLines = Self.lineCount
         label.lineBreakMode = .byTruncatingTail
         label.cell?.truncatesLastVisibleLine = true
         addSubview(label)
@@ -540,7 +541,7 @@ final class SummaryView: NSView {
 
     override func layout() {
         super.layout()
-        let height = min(bounds.height, ceil(label.font!.boundingRectForFont.height * 2) + 4)
+        let height = min(bounds.height, ceil(label.font!.boundingRectForFont.height * CGFloat(Self.lineCount)) + 4)
         label.frame = NSRect(x: 0, y: bounds.maxY - height, width: bounds.width, height: height)
         spinner.frame = NSRect(x: 0, y: bounds.maxY - 18, width: 16, height: 16)
     }

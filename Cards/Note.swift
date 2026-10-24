@@ -140,10 +140,17 @@ struct Style: OptionSet, Hashable {
     static let italic = Style(rawValue: 1 << 1)
 }
 
-/// SHA-256 of a note's Markdown, hex. Stable across launches (unlike `Hasher`), so the sidecar can
-/// say which version of a note a cached summary describes.
+/// SHA-256 of some text, hex. Stable across launches (unlike `Hasher`), so the sidecar can say
+/// which version of a note, and which prompt, a cached summary came from.
 struct Digest: RawRepresentable, Hashable, Codable {
     let rawValue: String
+}
+
+extension Digest {
+    init(of text: String) {
+        let hash = SHA256.hash(data: Data(text.utf8))
+        self.init(rawValue: hash.map { String(format: "%02x", $0) }.joined())
+    }
 }
 
 extension Note {
@@ -153,10 +160,7 @@ extension Note {
         return trimmed.isEmpty ? "Untitled" : trimmed
     }
 
-    var digest: Digest {
-        let hash = SHA256.hash(data: Data(markdown.utf8))
-        return Digest(rawValue: hash.map { String(format: "%02x", $0) }.joined())
-    }
+    var digest: Digest { Digest(of: markdown) }
 
     /// Summaries exist only for bodies with at least two non-blank lines (spec: "no summary for
     /// empty or one-line bodies").

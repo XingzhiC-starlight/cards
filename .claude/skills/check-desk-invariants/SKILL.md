@@ -43,7 +43,7 @@ After every step it checks:
 | P2 places | No two snapped items share a slot, at most 19 cards are on the desktop, and the stack's page exists | Windows on top of each other; Pop past the ceiling; a crash on a bad index |
 | P3 stack page | The stack keeps showing the same page unless the command is meant to change it (a flip moves one page around the loop; ↩ Stack shows the returned card; an arranger row click shows its card; an arranger move keeps the same card, or the blank page, showing; typing on the blank page shows the new card with a new blank page after it; New on a full desktop shows the blank page; a card that leaves is replaced by the next surviving card under it) | Typing lands in a card the user is not looking at |
 | P4 stack order | Stacked cards keep their order, except the one card an arranger move puts at its clamped index with every other card in its old order; ↩ Stack puts its card on top; new cards join at the bottom; a move touches nothing on the desktop | The stack reshuffles itself, or an arranger move drops or misplaces a card |
-| P5 save and reload | The notes written as Markdown and the sidecar as JSON, read back the way `Library.load` reads them, give the same places, stack, Clarity, collapsed state and text summaries | A relaunch loses positions or text |
+| P5 save and reload | The notes written as Markdown and the sidecar as JSON, read back the way `Library.load` reads them, give the same places, stack, Clarity, collapsed state and text summaries (a summary round-trips only under the prompt that wrote it: the sidecar stamps `Summary.prompt`, and a load drops any other) | A relaunch loses positions or text |
 | P6 clarity | The Clarity button sets every card; a per-card change never moves the button | Cards collapse or expand on their own |
 | P7 summaries | A summary attaches only to the version of the card it describes | A card shows a summary of text it no longer has |
 
@@ -99,7 +99,7 @@ unless the user asked for a fix.
   - Then run `run.sh`, then `run.sh --mutants`, and only then `run.sh --reviewed`.
   - CI runs `run.sh --require-reviewed` and fails until `reviewed.sha256` is recorded again, so
     commit it with the change.
-- `run.sh --mutants` breaks `Desk.swift` eleven known ways in a scratch copy under
+- `run.sh --mutants` breaks `Desk.swift` twelve known ways in a scratch copy under
   `build/desk-check/` (never the real file) and needs every property to catch its break. If a
   mutant's text no longer exists in `Desk.swift`, update that line in `MUTANTS` in `run.sh` to an
   equivalent break of the new code. If a mutant is not caught, the check has lost its teeth: fix
