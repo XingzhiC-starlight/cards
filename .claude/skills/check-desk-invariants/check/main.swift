@@ -283,6 +283,7 @@ func checkState(_ after: Desk) throws {
     // P5 Saving and relaunching restores the desk: the notes as Markdown and the sidecar as JSON,
     // read back the way `Library.load` reads them, give the same places, stack, clarity, collapsed
     // state and text summaries (the stack page and failed summaries are deliberately not saved).
+    // Every summary is written under the current prompt, so each must survive the reload.
     let files = notes.mapValues { Note(markdown: $0.markdown) }
     let sidecar = try! JSONDecoder().decode(SavedDesk.self, from: try! JSONEncoder().encode(after.saved))
     let reloaded = Desk(notes: files, saved: sidecar)

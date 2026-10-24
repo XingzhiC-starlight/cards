@@ -40,6 +40,8 @@ cv launch --seed      # or plain `cv launch` for an empty folder
 - `--seed` writes two cards before launch: `seed-a.md` ("Alpha card", one body line) and
   `seed-b.md` ("Beta card", two body lines). With no sidecar both start in the stack, Alpha on
   top. Without `--seed` the stack starts on its blank page with a count of 0.
+- `--seed SIDECAR` also copies SIDECAR in as `.cards.json` before launch, to start from saved
+  places, Clarity or summaries.
 - One run at a time: `launch` refuses while the current run's app is still up.
 - The app activates itself at launch and on most clicks, so it takes focus from whatever the user
   is doing.

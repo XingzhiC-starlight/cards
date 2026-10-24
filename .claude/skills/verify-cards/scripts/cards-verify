@@ -16,7 +16,7 @@ EVIDENCE_ROOT="$REPO/build/verify-evidence"
 usage() {
   cat <<'EOF'
 cards-verify build                  build Cards into build/VerifyDerivedData and compile cards-ax
-cards-verify launch [--seed]        start an isolated instance on an empty temp folder (--seed: two stacked cards)
+cards-verify launch [--seed [SIDECAR]]  start an isolated instance on an empty temp folder (--seed: two stacked cards; SIDECAR: a .cards.json to start from)
 cards-verify doctor                 read-only health check of the current run
 cards-verify ax COMMAND ARGS...     cards-ax against the current run's pid (tree, press, text, click, focus, type, key, scroll, drag, windows, act, where, mouse, dragat, listen)
 cards-verify shot NAME              screenshot every window + accessibility tree into the evidence folder
@@ -77,6 +77,7 @@ launch() {
   if [[ "${1:-}" == "--seed" ]]; then
     printf '# Alpha card\n\nalpha body\n' > "$folder/seed-a.md"
     printf '# Beta card\n\nbeta line one\nbeta line two\n' > "$folder/seed-b.md"
+    if [[ -n "${2:-}" ]]; then cp "$2" "$folder/.cards.json"; fi
   fi
   # `open -n` detaches the app from this shell (a child of the shell dies with it) and starts a new
   # instance even while the owner's Cards runs. Every later step targets the pid, never the name.

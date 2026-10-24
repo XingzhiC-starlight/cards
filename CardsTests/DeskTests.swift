@@ -428,4 +428,40 @@ final class DeskTests: XCTestCase {
         XCTAssertEqual(face("b"), .text("kept"), "a popped card's summary that worked stays")
         XCTAssertEqual(face("d"), .text("kept"), "and so does a stacked one's")
     }
+
+    private func summaryFace(on desk: Desk) -> SummaryFace {
+        Desk.summaryFace(of: desk.allCards[0], hasKey: true)
+    }
+
+    private func reload(sidecarSummary prompt: Digest?) -> Desk {
+        let note = longNote("a")
+        let saved = SavedDesk(stack: [id("a")], summaries: [
+            SavedSummary(card: id("a"), source: note.digest, text: "kept", prompt: prompt)])
+        return Desk(notes: [id("a"): note], saved: saved)
+    }
+
+    func testASavedSummaryFromTheCurrentPromptSurvivesRelaunch() throws {
+        var desk = Desk(notes: [id("a"): longNote("a")], saved: SavedDesk(stack: [id("a")]))
+        desk.apply(.storeSummary(id("a"), Summary(source: longNote("a").digest, outcome: .text("kept"))))
+        let json = try JSONEncoder().encode(desk.saved)
+        let reloaded = Desk(notes: [id("a"): longNote("a")], saved: try JSONDecoder().decode(SavedDesk.self, from: json))
+        XCTAssertEqual(summaryFace(on: reloaded), .text("kept"), "a summary the current prompt wrote comes back")
+        XCTAssertEqual(summaryFace(on: reload(sidecarSummary: Summary.prompt)), .text("kept"))
+    }
+
+    func testASavedSummaryFromAnotherPromptOrNoneIsDroppedSoTheCardIsWantedAgain() {
+        XCTAssertEqual(summaryFace(on: reload(sidecarSummary: nil)), .loading, "no stamp means an older prompt wrote it")
+        XCTAssertEqual(summaryFace(on: reload(sidecarSummary: Digest(of: "some older prompt"))), .loading,
+                       "so does a stamp of another prompt")
+        XCTAssertNil(reload(sidecarSummary: nil).allCards[0].summary, "and the Summarizer sees no summary to keep")
+    }
+
+    func testASidecarSummaryWrittenBeforeTheStampDecodesAndIsDropped() throws {
+        let note = longNote("a")
+        let json = #"{"version":2,"clarity":false,"placements":[],"stack":["a"],"collapsed":[],"summaries":[{"card":"a","source":"\#(note.digest.rawValue)","text":"old"}]}"#
+        let saved = try JSONDecoder().decode(SavedDesk.self, from: Data(json.utf8))
+        XCTAssertNil(saved.summaries.first?.prompt, "a summary entry without a prompt key still decodes")
+        let desk = Desk(notes: [id("a"): note], saved: saved)
+        XCTAssertEqual(summaryFace(on: desk), .loading, "and the card asks for a new summary")
+    }
 }

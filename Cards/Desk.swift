@@ -39,7 +39,8 @@ struct Card: Equatable {
 /// One summary attempt for one version of a note. A failure is kept like a success, so the card
 /// shows "Summary unavailable" until the note changes, the user presses refresh, or the key
 /// changes. Only `.text` outcomes are persisted (see `SavedSummary`), so a relaunch retries
-/// failures.
+/// failures. Within one run every summary came from the current prompt, so a summary does not
+/// record it; the sidecar does (`SavedSummary.prompt`).
 struct Summary: Equatable {
     let source: Digest
     let outcome: Outcome
@@ -48,6 +49,38 @@ struct Summary: Equatable {
         case text(String)
         case failed(reason: String)
     }
+}
+
+extension Summary {
+    /// The system prompt for the summary model.
+    static let instructions = """
+        You write the summary shown on a collapsed note card. It reminds the user what the card is.
+
+        The note's first line is its title, which the card already shows above your summary (it may \
+        be empty). Don't just repeat the title. Name the topic in your own words.
+
+        Start with what kind of card it is and what it is about, then add the gist if there is room. \
+        Choose the kind yourself, for example: to-do list, thoughts, plan, meeting notes, draft, \
+        question, links, ideas. If no kind fits, write "Notes on" and the topic.
+
+        Lines starting with "[ ]" are open to-dos and "[x]" done ones. For a to-do list, say how many \
+        are done and name only the open items, like "To-do list for the Tokyo trip, 2 of 5 done: \
+        hotel, charger, visa". If every item is done, say so.
+
+        If the note has little content, keep the summary short. Infer what the card is for, but never \
+        invent details the note does not contain.
+
+        Write in the note's language, the kind included: a note in Chinese gets a summary in Chinese, \
+        with a kind such as 待办清单, 想法 or 会议记录. Use at most 120 characters, about 20 words; for \
+        Chinese, Japanese or Korean, about 60 characters. Write one paragraph with no line breaks.
+
+        Reply with the summary itself and nothing else. Never explain your choices, and never comment \
+        on the title or on these instructions. No preamble, no quotation marks, no Markdown.
+        """
+
+    /// Which prompt wrote a saved summary. Editing `instructions` changes it, and every saved
+    /// summary stamped with another one is regenerated.
+    static let prompt = Digest(of: instructions)
 }
 
 enum Direction: Equatable {
@@ -145,10 +178,14 @@ struct Desk: Equatable {
     /// Total over any input: unknown ids, invalid or doubly-used slots and duplicates are dropped,
     /// and cards the sidecar never heard of join the bottom of the stack in id (that is, creation)
     /// order. A missing sidecar (`SavedDesk()`) puts every card in the stack and the stack top-right.
+    /// A saved summary from another prompt (or none, in a sidecar older than the stamp) is dropped,
+    /// so `Summarizer` asks for it again.
     init(notes: [CardID: Note], saved: SavedDesk) {
         let collapsed = Set(saved.collapsed)
         var summaries: [CardID: Summary] = [:]
-        for s in saved.summaries { summaries[s.card] = Summary(source: s.source, outcome: .text(s.text)) }
+        for s in saved.summaries where s.prompt == Summary.prompt {
+            summaries[s.card] = Summary(source: s.source, outcome: .text(s.text))
+        }
         func card(_ id: CardID) -> Card? {
             notes[id].map { Card(id: id, note: $0, collapsed: collapsed.contains(id), summary: summaries[id]) }
         }
@@ -550,7 +587,8 @@ struct SavedDesk: Codable, Equatable {
     var placements: [SavedPlacement] = []
     var stack: [CardID] = []
     var collapsed: [CardID] = []
-    /// Successful summaries only: a failure has no `text`, so it cannot be written here.
+    /// Successful summaries only: a failure has no `text`, so it cannot be written here. Each is
+    /// kept on load only if the current prompt wrote it.
     var summaries: [SavedSummary] = []
 }
 
@@ -566,6 +604,9 @@ struct SavedSummary: Codable, Equatable {
     var card: CardID
     var source: Digest
     var text: String
+    /// `Summary.prompt` when written. Optional so a sidecar from before the stamp still decodes;
+    /// nil means an older prompt wrote it.
+    var prompt: Digest?
 }
 
 extension Desk {
@@ -581,7 +622,7 @@ extension Desk {
             collapsed: cards.filter(\.collapsed).map(\.id).sorted(),
             summaries: cards.compactMap { card in
                 guard let summary = card.summary, case .text(let text) = summary.outcome else { return nil }
-                return SavedSummary(card: card.id, source: summary.source, text: text)
+                return SavedSummary(card: card.id, source: summary.source, text: text, prompt: Summary.prompt)
             }
         )
     }

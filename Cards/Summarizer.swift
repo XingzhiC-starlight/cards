@@ -63,12 +63,6 @@ enum Anthropic {
     static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     static let model = "claude-haiku-5-5"
 
-    static let instructions = """
-        Summarize the user's note in at most two short sentences, about 25 words in total, \
-        written in the same language as the note. Reply with the summary only: no preamble, \
-        no quotation marks, no Markdown.
-        """
-
     /// Never throws: every failure becomes `.failed(reason:)`, whose reason is the hover text
     /// under "Summary unavailable".
     ///
@@ -82,7 +76,7 @@ enum Anthropic {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         let body = RequestBody(model: model, max_tokens: 1024, output_config: .init(effort: "low"),
-                               system: instructions,
+                               system: Summary.instructions,
                                messages: [.init(role: "user", content: note.plainText)])
         do {
             request.httpBody = try JSONEncoder().encode(body)

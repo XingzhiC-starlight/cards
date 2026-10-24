@@ -131,8 +131,10 @@ func send(_ command: Command) {
   Markdown's backslash rule) and read by `Note`'s one reader. `Clipboard.paste` splices the run
   into the note as a pure function; the editor then replaces only the paragraphs that changed, in
   one undo step.
-- **Summaries.** A summary records the fingerprint of the note it describes; it is fresh only
-  while that matches. Spinner, failure and "no key" are derived, not stored as flags.
+- **Summaries.** A summary records the fingerprint of the note it describes and the version of
+  the prompt that wrote it; it is fresh only while both match. Bumping the prompt version
+  therefore regenerates every summary once, and a saved summary without a version counts as
+  stale. Spinner, failure and "no key" are derived, not stored as flags.
 
 ## Color and glass
 
